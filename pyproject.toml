@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pycrdt-store"
+dynamic = ["version"]
+description = "Persistent storage for pycrdt"
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "David Brochart", email = "david.brochart@gmail.com" },
+]
+keywords = [
+    "pycrdt",
+    "yjs",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "anyio >=3.6.2,<5",
+    "sqlite-anyio >=0.2.3,<0.3.0",
+    "pycrdt >=0.12.13,<0.13.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "mypy",
+    "pre-commit",
+    "pytest",
+    "trio >=0.25.0",
+]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings-python",
+]
+
+[project.urls]
+Homepage = "https://github.com/y-crdt/pycrdt-store"
+Source = "https://github.com/y-crdt/pycrdt-store"
+Issues = "https://github.com/y-crdt/pycrdt-store/issues"
+Pypi = "https://pypi.org/project/pycrdt-store"
+
+[tool.hatch.version]
+path = "src/pycrdt/store/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+ignore-vcs = true
+packages = ["src/pycrdt"]
+
+[tool.ruff]
+line-length = 99
+lint.select = [
+    "ASYNC",        # flake8-async
+    "E", "F", "W",  # default Flake8
+    "G",            # flake8-logging-format
+    "I",            # isort
+    "ISC",          # flake8-implicit-str-concat
+    "PGH",          # pygrep-hooks
+    "RUF100",       # unused noqa (yesqa)
+    "UP",           # pyupgrade
+]
