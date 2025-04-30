@@ -509,6 +509,7 @@ class SQLiteYStore(BaseYStore):
                     if ttl_exceeded:
                         older_than = now
                     else:  # history_exceeded
+                        assert self.history_length is not None
                         older_than = now - self.history_length
 
                     await cursor.execute(
