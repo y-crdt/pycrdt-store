@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from anyio import create_task_group
+from anyio import create_task_group, sleep
 from sqlite_anyio import connect
 from utils import StartStopContextManager, YDocTest
 
@@ -105,6 +105,35 @@ async def test_document_ttl_sqlite_ystore(ystore_api):
 
             await db.close()
 
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_document_ttl_reduces_file_size(ystore_api):
+    async with create_task_group() as tg:
+        test_ydoc = YDocTest()
+        store_name = f"size_test_store_{ystore_api}"
+        ystore = MySQLiteYStore(store_name, delete=True)
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            now = time.time()
+            db_path = ystore.db_path
+
+            for _ in range(60):
+                with patch("time.time") as mock_time:
+                    mock_time.return_value = now
+                    await ystore.write(test_ydoc.update())
+            size_before = Path(db_path).stat().st_size
+
+            with patch("time.time") as mock_time:
+                mock_time.return_value = now + ystore.document_ttl + 1
+                await ystore.write(test_ydoc.update())
+
+            # Allow some time for vacuum to complete
+            await sleep(0.1)
+
+            size_after = Path(db_path).stat().st_size
+
+            assert size_after < size_before, f"Expected size_after < size_before but got {size_before} -> {size_after}"
 
 @pytest.mark.parametrize("YStore", (MyTempFileYStore, MySQLiteYStore))
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
