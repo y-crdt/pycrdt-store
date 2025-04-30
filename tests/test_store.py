@@ -117,7 +117,7 @@ async def test_document_ttl_reduces_file_size(ystore_api):
         async with ystore as ystore:
             now = time.time()
             db_path = ystore.db_path
-            # 1) tweak page size to 1KB so the file grows in small increments
+            # 1) tweak page size to 512 Bytes so the file grows in small increments
             db = await connect(db_path)
             async with db:
                 cursor = await db.cursor()
