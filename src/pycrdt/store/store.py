@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import struct
 import tempfile
 import time
@@ -10,7 +9,7 @@ from functools import partial
 from inspect import isawaitable
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Callable, cast
+from typing import Callable, Literal, cast
 
 import anyio
 from anyio import TASK_STATUS_IGNORED, Event, Lock, create_task_group
@@ -328,6 +327,10 @@ class SQLiteYStore(BaseYStore):
     # latest update of a document must be before purging document history.
     # Defaults to never purging document history (None).
     document_ttl: int | None = None
+    # The maximum length of the history of the documents in seconds that is kept.
+    history_length: int | None = None
+    # The minimum interval in seconds between history cleanup operations.
+    min_cleanup_interval: int = 60
     path: str
     lock: Lock
     db_initialized: Event | None
@@ -486,36 +489,60 @@ class SQLiteYStore(BaseYStore):
             async with self._db:
                 # first, determine time elapsed since last update
                 cursor = await self._db.cursor()
-                await cursor.execute(
-                    "SELECT timestamp FROM yupdates WHERE path = ? "
-                    "ORDER BY timestamp DESC LIMIT 1",
-                    (self.path,),
-                )
-                row = await cursor.fetchone()
-                diff = (time.time() - row[0]) if row else 0
+                newest_diff = await self._get_time_differential_to_entry(cursor, direction="DESC")
+                oldest_diff = await self._get_time_differential_to_entry(cursor, direction="ASC")
 
-                if self.document_ttl is not None and diff > self.document_ttl:
+                ttl_exceeded = (
+                    self.document_ttl is not None
+                    and newest_diff > self.document_ttl
+                )
+                history_exceeded = (
+                    self.history_length is not None
+                    and oldest_diff > (self.history_length + self.min_cleanup_interval)
+                )
+
+                now = time.time()
+                if ttl_exceeded or history_exceeded:
                     # squash updates
                     ydoc: Doc = Doc()
+                    # pick cutoff: "now" = squash everything; "now - history" = prune only old tail
+                    if ttl_exceeded:
+                        older_than = now
+                    else:  # history_exceeded
+                        older_than = now - self.history_length
+
                     await cursor.execute(
-                        "SELECT yupdate FROM yupdates WHERE path = ?",
-                        (self.path,),
+                        "SELECT yupdate FROM yupdates WHERE path = ? AND timestamp < ?"
+                        "ORDER BY timestamp ASC",
+                        (self.path, older_than),
                     )
                     for (update,) in await cursor.fetchall():
                         ydoc.apply_update(update)
                     # delete history
-                    await cursor.execute("DELETE FROM yupdates WHERE path = ?", (self.path,))
+                    await cursor.execute("DELETE FROM yupdates WHERE path = ? AND timestamp < ?", (self.path,older_than))
                     # insert squashed updates
                     squashed_update = ydoc.get_update()
                     metadata = await self.get_metadata()
                     await cursor.execute(
                         "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
-                        (self.path, squashed_update, metadata, time.time()),
+                        (self.path, squashed_update, metadata, now),
                     )
 
                 # finally, write this update to the DB
                 metadata = await self.get_metadata()
                 await cursor.execute(
                     "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
-                    (self.path, data, metadata, time.time()),
+                    (self.path, data, metadata, now),
                 )
+
+    async def _get_time_differential_to_entry(
+        self, cursor, direction: Literal["ASC", "DESC"] = "DESC"
+    ) -> float:
+        """Get the time differential to the newest (DESC) or oldest (ASC) entry in the database."""
+        await cursor.execute(
+            "SELECT timestamp FROM yupdates WHERE path = ? "
+            f"ORDER BY timestamp {direction} LIMIT 1",
+            (self.path,),
+        )
+        row = await cursor.fetchone()
+        return (time.time() - row[0]) if row else 0
