@@ -124,8 +124,15 @@ async def test_document_ttl_reduces_file_size(ystore_api):
         async with ystore as ystore:
             now = time.time()
             db_path = ystore.db_path
+            # 1) tweak page size to 1KB so the file grows in small increments
+            db = await connect(db_path)
+            async with db:
+                cursor = await db.cursor()
+                await cursor.execute("PRAGMA page_size = 512;")
+                await cursor.execute("VACUUM;")
+                await db.commit()
 
-            for _ in range(60):
+            for _ in range(10):
                 with patch("time.time") as mock_time:
                     mock_time.return_value = now
                     await ystore.write(test_ydoc.update())
@@ -143,6 +150,8 @@ async def test_document_ttl_reduces_file_size(ystore_api):
             assert size_after < size_before, (
                 f"Expected size_after < size_before but got {size_before} -> {size_after}"
             )
+
+            await db.close()
 
 
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
