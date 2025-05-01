@@ -38,7 +38,9 @@ class MySQLiteYStore(SQLiteYStore):
     db_path = MY_SQLITE_YSTORE_DB_PATH
     document_ttl = 1000
 
-    def __init__(self, *args, delete=False, history_length=None, min_cleanup_interval=None, **kwargs):
+    def __init__(
+        self, *args, delete=False, history_length=None, min_cleanup_interval=None, **kwargs
+    ):
         if history_length:
             self.history_length = history_length
         if min_cleanup_interval:
@@ -109,6 +111,7 @@ async def test_document_ttl_sqlite_ystore(ystore_api):
 
             await db.close()
 
+
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
 async def test_document_ttl_reduces_file_size(ystore_api):
     async with create_task_group() as tg:
@@ -137,7 +140,10 @@ async def test_document_ttl_reduces_file_size(ystore_api):
 
             size_after = Path(db_path).stat().st_size
 
-            assert size_after < size_before, f"Expected size_after < size_before but got {size_before} -> {size_after}"
+            assert size_after < size_before, (
+                f"Expected size_after < size_before but got {size_before} -> {size_after}"
+            )
+
 
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
 async def test_history_pruning_with_cleanup_interval(ystore_api):
@@ -177,10 +183,13 @@ async def test_history_pruning_with_cleanup_interval(ystore_api):
             # After pruning, only entries ≥ (current_time − history_length)
             # i.e., timestamps ≥ (6 − 3) = 3 remain.
             # We had writes at t=0,1,2 (all < 3), t=6 and squashed update survives
-            final_count = (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[0]
+            final_count = (
+                await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone()
+            )[0]
             assert final_count == 2, f"Expected 2 entry after pruning, got {final_count}"
 
             await db.close()
+
 
 @pytest.mark.parametrize("YStore", (MyTempFileYStore, MySQLiteYStore))
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))

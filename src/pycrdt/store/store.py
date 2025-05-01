@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import struct
 import tempfile
 import time
@@ -492,13 +493,9 @@ class SQLiteYStore(BaseYStore):
                 newest_diff = await self._get_time_differential_to_entry(cursor, direction="DESC")
                 oldest_diff = await self._get_time_differential_to_entry(cursor, direction="ASC")
 
-                ttl_exceeded = (
-                    self.document_ttl is not None
-                    and newest_diff > self.document_ttl
-                )
-                history_exceeded = (
-                    self.history_length is not None
-                    and oldest_diff > (self.history_length + self.min_cleanup_interval)
+                ttl_exceeded = self.document_ttl is not None and newest_diff > self.document_ttl
+                history_exceeded = self.history_length is not None and oldest_diff > (
+                    self.history_length + self.min_cleanup_interval
                 )
 
                 now = time.time()
@@ -520,7 +517,10 @@ class SQLiteYStore(BaseYStore):
                     for (update,) in await cursor.fetchall():
                         ydoc.apply_update(update)
                     # delete history
-                    await cursor.execute("DELETE FROM yupdates WHERE path = ? AND timestamp < ?", (self.path,older_than))
+                    await cursor.execute(
+                        "DELETE FROM yupdates WHERE path = ? AND timestamp < ?",
+                        (self.path, older_than),
+                    )
                     # insert squashed updates
                     squashed_update = ydoc.get_update()
                     metadata = await self.get_metadata()
