@@ -45,10 +45,7 @@ class MySQLiteYStore(SQLiteYStore):
             except PermissionError:
                 # If db is still open, wait a bit and try again
                 sleep(0.1)
-                try:
-                    Path(self.db_path).unlink(missing_ok=True)
-                except PermissionError as pe:
-                    raise pe
+                Path(self.db_path).unlink(missing_ok=True) # Raises exception if still open
         super().__init__(*args, **kwargs)
 
 
