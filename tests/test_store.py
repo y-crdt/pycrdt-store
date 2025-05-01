@@ -40,7 +40,15 @@ class MySQLiteYStore(SQLiteYStore):
 
     def __init__(self, *args, delete=False, **kwargs):
         if delete:
-            Path(self.db_path).unlink(missing_ok=True)
+            try:
+                Path(self.db_path).unlink(missing_ok=True)
+            except PermissionError:
+                # If db is still open, wait a bit and try again
+                sleep(0.1)
+                try:
+                    Path(self.db_path).unlink(missing_ok=True)
+                except PermissionError as pe:
+                    raise pe
         super().__init__(*args, **kwargs)
 
 
@@ -141,6 +149,8 @@ async def test_document_ttl_reduces_file_size(ystore_api):
             size_after = Path(db_path).stat().st_size
 
             assert size_after < size_before, f"Expected size_after < size_before but got {size_before} -> {size_after}"
+
+            await db.close()
 
 @pytest.mark.parametrize("YStore", (MyTempFileYStore, MySQLiteYStore))
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
