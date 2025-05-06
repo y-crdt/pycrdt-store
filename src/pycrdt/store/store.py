@@ -328,6 +328,11 @@ class SQLiteYStore(BaseYStore):
     # latest update of a document must be before purging document history.
     # Defaults to never purging document history (None).
     document_ttl: int | None = None
+    # Interval at which checkpoints are created for efficient document loading
+    checkpoint_interval = 100
+    # Counter to keep track of updates since the last checkpoint
+    _update_counter = 0
+
     path: str
     lock: Lock
     db_initialized: Event | None
@@ -351,6 +356,46 @@ class SQLiteYStore(BaseYStore):
         self.log = log or getLogger(__name__)
         self.lock = Lock()
         self.db_initialized = None
+
+    async def apply_checkpointed_updates(self, ydoc: Doc) -> None:
+        """Apply the latest checkpoint (if any) and then all subsequent updates to the YDoc."""
+        if self.db_initialized is None:
+            raise RuntimeError("YStore not started")
+        await self.db_initialized.wait()
+
+        found_any = False
+        async with self.lock:
+            async with self._db:
+                cursor = await self._db.cursor()
+
+                # 1) Load latest checkpoint, if present
+                await cursor.execute(
+                    "SELECT checkpoint, timestamp FROM ycheckpoints WHERE path = ?",
+                    (self.path,),
+                )
+                row = await cursor.fetchone()
+                if row:
+                    checkpoint_blob, last_ts = row
+                    ydoc.apply_update(checkpoint_blob)
+                    found_any = True
+                else:
+                    last_ts = 0.0
+
+                # 2) Apply all updates after the checkpoint timestamp
+                await cursor.execute(
+                    "SELECT yupdate, metadata, timestamp "
+                    "FROM yupdates "
+                    "WHERE path = ? AND timestamp > ? "
+                    "ORDER BY timestamp ASC",
+                    (self.path, last_ts),
+                )
+                for update, metadata, timestamp in await cursor.fetchall():
+                    ydoc.apply_update(update)
+                    found_any = True
+
+        if not found_any:
+            # no checkpoint and no updates ⇒ document doesn't exist
+            raise YDocNotFound
 
     async def start(
         self,
@@ -411,6 +456,15 @@ class SQLiteYStore(BaseYStore):
                         if version != self.version:
                             move_db = True
                             create_db = True
+                        else:
+                            # if ycheckpoints is missing, we need a fresh schema
+                            await cursor.execute(
+                                "SELECT count(name) FROM sqlite_master "
+                                "WHERE type='table' AND name='ycheckpoints'"
+                            )
+                            ckpt_exists = (await cursor.fetchone())[0]
+                            if not ckpt_exists:
+                                create_db = True
                     else:
                         create_db = True
                 await db.close()
@@ -433,6 +487,15 @@ class SQLiteYStore(BaseYStore):
                     )
                     await cursor.execute(
                         "CREATE INDEX idx_yupdates_path_timestamp ON yupdates (path, timestamp)"
+                    )
+                    # checkpoint table
+                    await cursor.execute(
+                        "CREATE TABLE ycheckpoints ("
+                        "path TEXT NOT NULL, "
+                        "checkpoint BLOB NOT NULL, "
+                        "timestamp REAL NOT NULL, "
+                        "PRIMARY KEY(path)"
+                        ")"
                     )
                     await cursor.execute(f"PRAGMA user_version = {self.version}")
                 await db.close()
@@ -516,3 +579,37 @@ class SQLiteYStore(BaseYStore):
                     "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
                     (self.path, data, metadata, time.time()),
                 )
+
+                # storing checkpoints
+                self._update_counter += 1
+                if self._update_counter >= self.checkpoint_interval:
+                    # load or init checkpoint
+                    await cursor.execute(
+                        "SELECT checkpoint, timestamp FROM ycheckpoints WHERE path = ?",
+                        (self.path,),
+                    )
+                    row = await cursor.fetchone()
+                    ydoc: Doc = Doc()
+                    last_ts = 0.0
+                    if row:
+                        blob, last_ts = row
+                        ydoc.apply_update(blob)
+
+                    # apply all updates after last_ts
+                    await cursor.execute(
+                        "SELECT yupdate FROM yupdates "
+                        "WHERE path = ? AND timestamp > ? ORDER BY timestamp ASC",
+                        (self.path, last_ts),
+                    )
+                    for (upd,) in await cursor.fetchall():
+                        ydoc.apply_update(upd)
+
+                    # write back the new checkpoint
+                    new_ckpt = ydoc.get_update()
+                    now = time.time()
+                    await cursor.execute(
+                        "INSERT OR REPLACE INTO ycheckpoints (path, checkpoint, timestamp) "
+                        "VALUES (?, ?, ?)",
+                        (self.path, new_ckpt, now),
+                    )
+                    self._update_counter = 0
