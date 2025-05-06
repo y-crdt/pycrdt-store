@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from anyio import create_task_group
+from anyio import create_task_group, sleep
 from sqlite_anyio import connect
 from utils import StartStopContextManager, YDocTest
 
@@ -38,7 +38,13 @@ class MySQLiteYStore(SQLiteYStore):
     db_path = MY_SQLITE_YSTORE_DB_PATH
     document_ttl = 1000
 
-    def __init__(self, *args, delete=False, **kwargs):
+    def __init__(
+        self, *args, delete=False, history_length=None, min_cleanup_interval=None, **kwargs
+    ):
+        if history_length:
+            self.history_length = history_length
+        if min_cleanup_interval:
+            self.min_cleanup_interval = min_cleanup_interval
         if delete:
             Path(self.db_path).unlink(missing_ok=True)
         super().__init__(*args, **kwargs)
@@ -102,6 +108,94 @@ async def test_document_ttl_sqlite_ystore(ystore_api):
                 assert (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[
                     0
                 ] == 2
+
+            await db.close()
+
+
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_document_ttl_reduces_file_size(ystore_api):
+    async with create_task_group() as tg:
+        test_ydoc = YDocTest()
+        store_name = f"size_test_store_{ystore_api}"
+        ystore = MySQLiteYStore(store_name, delete=True)
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            now = time.time()
+            db_path = ystore.db_path
+            # 1) tweak page size to 1KB so the file grows in small increments
+            db = await connect(db_path)
+            async with db:
+                cursor = await db.cursor()
+                await cursor.execute("PRAGMA page_size = 512;")
+                await cursor.execute("VACUUM;")
+                await db.commit()
+
+            for _ in range(10):
+                with patch("time.time") as mock_time:
+                    mock_time.return_value = now
+                    await ystore.write(test_ydoc.update())
+            size_before = Path(db_path).stat().st_size
+
+            with patch("time.time") as mock_time:
+                mock_time.return_value = now + ystore.document_ttl + 1
+                await ystore.write(test_ydoc.update())
+
+            # Allow some time for vacuum to complete
+            await sleep(0.1)
+
+            size_after = Path(db_path).stat().st_size
+
+            assert size_after < size_before, (
+                f"Expected size_after < size_before but got {size_before} -> {size_after}"
+            )
+
+            await db.close()
+
+
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_history_pruning_with_cleanup_interval(ystore_api):
+    async with create_task_group() as tg:
+        test_ydoc = YDocTest()
+        store_name = f"store_{ystore_api}_prune_interval"
+        # history_length = 3s, min_cleanup_interval = 1s
+        ystore = MySQLiteYStore(
+            store_name,
+            delete=True,
+            history_length=3,
+            min_cleanup_interval=1,
+        )
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            db = await connect(ystore.db_path)
+            cursor = await db.cursor()
+
+            base = time.time()
+
+            # Write at t = base and t = base + 1 & + 2
+            for offset in (0, 1, 2):
+                with patch("time.time", return_value=base + offset):
+                    await ystore.write(test_ydoc.update())
+
+            # All entries are still within history_length window
+            count = (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[0]
+            assert count == 3
+
+            # Now advance to t = base + 6
+            # oldest_diff = 6s > history_length + min_cleanup_interval = 4s → triggers prune
+            with patch("time.time", return_value=base + 6):
+                await ystore.write(test_ydoc.update())
+
+            # After pruning, only entries ≥ (current_time − history_length)
+            # i.e., timestamps ≥ (6 − 3) = 3 remain.
+            # We had writes at t=0,1,2 (all < 3), t=6 and squashed update survives
+            final_count = (
+                await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone()
+            )[0]
+            assert final_count == 2, f"Expected 2 entry after pruning, got {final_count}"
 
             await db.close()
 
