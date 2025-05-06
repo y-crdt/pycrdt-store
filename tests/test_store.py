@@ -40,12 +40,7 @@ class MySQLiteYStore(SQLiteYStore):
 
     def __init__(self, *args, delete=False, **kwargs):
         if delete:
-            try:
-                Path(self.db_path).unlink(missing_ok=True)
-            except PermissionError:
-                # If db is still open, wait a bit and try again
-                sleep(0.1)
-                Path(self.db_path).unlink(missing_ok=True)  # Raises exception if still open
+            Path(self.db_path).unlink(missing_ok=True)
         super().__init__(*args, **kwargs)
 
 
