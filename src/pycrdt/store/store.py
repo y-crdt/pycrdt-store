@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable, cast
 
 import anyio
+import lz4.frame
 from anyio import TASK_STATUS_IGNORED, Event, Lock, create_task_group
 from anyio.abc import TaskGroup, TaskStatus
 from sqlite_anyio import Connection, connect, exception_logger
@@ -464,6 +465,7 @@ class SQLiteYStore(BaseYStore):
                         (self.path,),
                     )
                     for update, metadata, timestamp in await cursor.fetchall():
+                        update = lz4.frame.decompress(update)
                         found = True
                         yield update, metadata, timestamp
                 if not found:
@@ -505,15 +507,17 @@ class SQLiteYStore(BaseYStore):
                     await cursor.execute("DELETE FROM yupdates WHERE path = ?", (self.path,))
                     # insert squashed updates
                     squashed_update = ydoc.get_update()
+                    compressed_update = lz4.frame.compress(squashed_update, compression_level=0)
                     metadata = await self.get_metadata()
                     await cursor.execute(
                         "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
-                        (self.path, squashed_update, metadata, time.time()),
+                        (self.path, compressed_update, metadata, time.time()),
                     )
 
                 # finally, write this update to the DB
                 metadata = await self.get_metadata()
+                compressed_data = lz4.frame.compress(data, compression_level=0)
                 await cursor.execute(
                     "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
-                    (self.path, data, metadata, time.time()),
+                    (self.path, compressed_data, metadata, time.time()),
                 )
