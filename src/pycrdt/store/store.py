@@ -554,9 +554,10 @@ class SQLiteYStore(BaseYStore):
                 row = await cursor.fetchone()
                 diff = (time.time() - row[0]) if row else 0
 
+                ydoc: Doc
                 if self.document_ttl is not None and diff > self.document_ttl:
                     # squash updates
-                    ydoc: Doc = Doc()
+                    ydoc = Doc()
                     await cursor.execute(
                         "SELECT yupdate FROM yupdates WHERE path = ?",
                         (self.path,),
@@ -589,7 +590,7 @@ class SQLiteYStore(BaseYStore):
                         (self.path,),
                     )
                     row = await cursor.fetchone()
-                    ydoc: Doc = Doc()
+                    ydoc = Doc()
                     last_ts = 0.0
                     if row:
                         blob, last_ts = row
