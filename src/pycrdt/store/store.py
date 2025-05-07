@@ -464,7 +464,10 @@ class SQLiteYStore(BaseYStore):
                         (self.path,),
                     )
                     for update, metadata, timestamp in await cursor.fetchall():
-                        update = lz4.frame.decompress(update)
+                        try:
+                            update = lz4.frame.decompress(update)
+                        except lz4.frame.LZ4FrameError:
+                            pass
                         found = True
                         yield update, metadata, timestamp
                 if not found:
