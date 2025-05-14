@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import struct
+import sys
 import tempfile
 import time
 from abc import ABC, abstractmethod
@@ -523,3 +524,100 @@ class SQLiteYStore(BaseYStore):
                     "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
                     (self.path, compressed_data, metadata, time.time()),
                 )
+
+
+class RamYStore(BaseYStore):
+    """
+    A YStore implementation that stores updates in RAM.
+    All updates are stored in memory and are automatically cleared when the process terminates.
+    """
+
+    # Maximum storage allowed in RAM for this document (in megabytes).
+    max_storage_in_mb: int = 512  # Default is 512MB.
+
+    def __init__(
+        self,
+        path: str,
+        metadata_callback: Callable[[], Awaitable[bytes] | bytes] | None = None,
+        log: Logger | None = None,
+    ) -> None:
+        """Initialize the RamYStore.
+
+        Arguments:
+            path: A unique identifier for this document (not a file path)
+            metadata_callback: An optional callback to call to get the metadata
+            log: An optional logger
+        """
+        self.path = path
+        self.metadata_callback = metadata_callback
+        self.log = log or getLogger(__name__)
+        self.lock = Lock()
+        # Structure: List of (update_bytes, metadata_bytes, timestamp)
+        self._updates: list[tuple[bytes, bytes, float]] = []
+
+        # Track memory usage for this document
+        self._memory_usage = 0
+
+    async def write(self, data: bytes) -> None:
+        """Store an update in memory, squashing updates if necessary.
+
+        Arguments:
+            data: The update to store
+        """
+        async with self.lock:
+            metadata = await self.get_metadata()
+            timestamp = time.time()
+
+            # Calculate size of this update in MB
+            update_size = (len(data) + len(metadata) + sys.getsizeof(timestamp)) / (1024 * 1024)
+
+            # Check if we need to squash updates due to size limit
+            if (
+                self.max_storage_in_mb is not None
+                and self._memory_usage + update_size > self.max_storage_in_mb
+            ):
+                await self._squash_updates()
+
+            self._updates.append((data, metadata, timestamp))
+            self._memory_usage += update_size
+
+    async def _squash_updates(self) -> None:
+        """Squash all existing updates into a single update to reduce memory usage."""
+
+        if not self._updates:
+            return
+
+        ydoc = Doc()
+        for update, _, _ in self._updates:
+            ydoc.apply_update(update)
+
+        # Get a single squashed update
+        squashed_update = ydoc.get_update()
+
+        # Get latest metadata and timestamp
+        _, latest_metadata, latest_timestamp = self._updates[-1]
+
+        # Reset memory usage
+        self._updates = []
+        self._memory_usage = 0
+
+        self._updates.append((squashed_update, latest_metadata, latest_timestamp))
+        self._memory_usage = (
+            len(squashed_update) + len(latest_metadata) + sys.getsizeof(latest_timestamp)
+        )
+
+    async def read(self) -> AsyncIterator[tuple[bytes, bytes, float]]:
+        """Async iterator for reading the updates stored in memory.
+
+        Returns:
+            A tuple of (update, metadata, timestamp) for each update.
+
+        Raises:
+            YDocNotFound: If no updates are stored for this document.
+        """
+        async with self.lock:
+            if not self._updates:
+                raise YDocNotFound
+
+            for update, metadata, timestamp in self._updates:
+                yield update, metadata, timestamp
