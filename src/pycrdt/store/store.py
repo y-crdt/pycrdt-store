@@ -475,11 +475,11 @@ class SQLiteYStore(BaseYStore):
                         (self.path,),
                     )
                     for update, metadata, timestamp in await cursor.fetchall():
-                        try:
-                            if self._decompress:
+                        if self._decompress:
+                            try:
                                 update = self._decompress(update)
-                        except Exception:
-                            pass
+                            except Exception:
+                                pass
                         found = True
                         yield update, metadata, timestamp
                 if not found:
