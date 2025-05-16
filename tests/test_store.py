@@ -143,7 +143,7 @@ async def test_in_memory_sqlite_ystore_persistence(ystore_api):
         if ystore_api == "ystore_start_stop":
             ystore = StartStopContextManager(ystore, tg)
 
-        async with ystore:
+        async with ystore as ystore:
             test_data = [b"data1", b"data2", b"data3"]
             for data in test_data:
                 await ystore.write(data)
