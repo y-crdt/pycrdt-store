@@ -339,8 +339,8 @@ class SQLiteYStore(BaseYStore):
     _db: Connection
 
     # Optional callbacks for compressing and decompressing data, default: no compression
-    _compress: Callable[[bytes], bytes] = lambda b: b
-    _decompress: Callable[[bytes], bytes] = lambda b: b
+    _compress: Callable[[bytes], bytes] = staticmethod(lambda b: b)  # type: ignore[assignment]
+    _decompress: Callable[[bytes], bytes] = staticmethod(lambda b: b)  # type: ignore[assignment]
 
     def __init__(
         self,
