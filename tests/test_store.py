@@ -153,6 +153,4 @@ async def test_in_memory_sqlite_ystore_persistence(ystore_api):
                 read_data.append(update)
 
             # Assert that all data we wrote is present
-            assert len(read_data) == len(test_data)
-            for i, data in enumerate(test_data):
-                assert data == read_data[i]
+            assert read_data == test_data
