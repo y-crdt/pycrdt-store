@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Callable, cast
 
 import anyio
-import lz4.frame
 from anyio import TASK_STATUS_IGNORED, Event, Lock, create_task_group
 from anyio.abc import TaskGroup, TaskStatus
 from sqlite_anyio import Connection, connect, exception_logger
@@ -334,6 +333,10 @@ class SQLiteYStore(BaseYStore):
     db_initialized: Event | None
     _db: Connection
 
+    # Optional callbacks for compressing and decompressing data, default: no compression
+    _compress: Callable[[bytes], bytes] | None = staticmethod(lambda data: data)
+    _decompress: Callable[[bytes], bytes] | None = staticmethod(lambda data: data)
+
     def __init__(
         self,
         path: str,
@@ -445,6 +448,14 @@ class SQLiteYStore(BaseYStore):
         assert self.db_initialized is not None
         self.db_initialized.set()
 
+    def register_compression_callbacks(
+        self, compress: Callable[[bytes], bytes], decompress: Callable[[bytes], bytes]
+    ) -> None:
+        if not callable(compress) or not callable(decompress):
+            raise TypeError("Both compress and decompress must be callable.")
+        self._compress = compress
+        self._decompress = decompress
+
     async def read(self) -> AsyncIterator[tuple[bytes, bytes, float]]:
         """Async iterator for reading the store content.
 
@@ -465,8 +476,8 @@ class SQLiteYStore(BaseYStore):
                     )
                     for update, metadata, timestamp in await cursor.fetchall():
                         try:
-                            update = lz4.frame.decompress(update)
-                        except lz4.frame.LZ4FrameError:
+                            update = self._decompress(update)
+                        except Exception:
                             pass
                         found = True
                         yield update, metadata, timestamp
@@ -509,7 +520,7 @@ class SQLiteYStore(BaseYStore):
                     await cursor.execute("DELETE FROM yupdates WHERE path = ?", (self.path,))
                     # insert squashed updates
                     squashed_update = ydoc.get_update()
-                    compressed_update = lz4.frame.compress(squashed_update, compression_level=0)
+                    compressed_update = self._compress(squashed_update)
                     metadata = await self.get_metadata()
                     await cursor.execute(
                         "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
@@ -518,7 +529,7 @@ class SQLiteYStore(BaseYStore):
 
                 # finally, write this update to the DB
                 metadata = await self.get_metadata()
-                compressed_data = lz4.frame.compress(data, compression_level=0)
+                compressed_data = self._compress(data)
                 await cursor.execute(
                     "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
                     (self.path, compressed_data, metadata, time.time()),
