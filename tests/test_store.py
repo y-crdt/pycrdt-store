@@ -156,19 +156,22 @@ async def test_in_memory_sqlite_ystore_persistence(ystore_api):
             # Assert that all data we wrote is present
             assert read_data == test_data
 
-
-async def test_compression_callbacks_zlib():
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_compression_callbacks_zlib(ystore_api):
     """
     Verify that registering zlib.compress/decompress as callbacks
     correctly round-trips data through the SQLiteYStore.
     """
-    async with create_task_group() as _:
-        store_name = "compress_test"
+    async with create_task_group() as tg:
+        store_name = f"compress_test_with_api_{ystore_api}"
         ystore = MySQLiteYStore(store_name, metadata_callback=MetadataCallback(), delete=True)
-        # register zlib compression/decompression
-        ystore.register_compression_callbacks(zlib.compress, zlib.decompress)
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
 
-        async with ystore:
+        async with ystore as ystore:
+            # register zlib compression/decompression
+            ystore.register_compression_callbacks(zlib.compress, zlib.decompress)
+
             data = [b"alpha", b"beta", b"gamma"]
             # write compressed
             for d in data:
