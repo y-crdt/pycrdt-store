@@ -334,8 +334,8 @@ class SQLiteYStore(BaseYStore):
     _db: Connection
 
     # Optional callbacks for compressing and decompressing data, default: no compression
-    _compress: Callable[[bytes], bytes] = staticmethod(lambda b: b)  # type: ignore[assignment]
-    _decompress: Callable[[bytes], bytes] = staticmethod(lambda b: b)  # type: ignore[assignment]
+    _compress: Callable[[bytes], bytes] | None = None
+    _decompress: Callable[[bytes], bytes] | None = None
 
     def __init__(
         self,
@@ -477,7 +477,8 @@ class SQLiteYStore(BaseYStore):
                     )
                     for update, metadata, timestamp in await cursor.fetchall():
                         try:
-                            update = self._decompress(update)
+                            if self._decompress:
+                                update = self._decompress(update)
                         except Exception:
                             pass
                         found = True
@@ -521,7 +522,9 @@ class SQLiteYStore(BaseYStore):
                     await cursor.execute("DELETE FROM yupdates WHERE path = ?", (self.path,))
                     # insert squashed updates
                     squashed_update = ydoc.get_update()
-                    compressed_update = self._compress(squashed_update)
+                    compressed_update = (
+                        self._compress(squashed_update) if self._compress else squashed_update
+                    )
                     metadata = await self.get_metadata()
                     await cursor.execute(
                         "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
@@ -530,7 +533,7 @@ class SQLiteYStore(BaseYStore):
 
                 # finally, write this update to the DB
                 metadata = await self.get_metadata()
-                compressed_data = self._compress(data)
+                compressed_data = self._compress(data) if self._compress else data
                 await cursor.execute(
                     "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
                     (self.path, compressed_data, metadata, time.time()),
