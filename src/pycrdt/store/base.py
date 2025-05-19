@@ -1,25 +1,17 @@
 from __future__ import annotations
 
-import struct
-import tempfile
-import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import AsyncExitStack
 from functools import partial
 from inspect import isawaitable
-from logging import Logger, getLogger
-from pathlib import Path
+from logging import Logger
 from typing import Callable, cast
 
-import anyio
 from anyio import TASK_STATUS_IGNORED, Event, Lock, create_task_group
 from anyio.abc import TaskGroup, TaskStatus
-from sqlite_anyio import Connection, connect, exception_logger
 
-from pycrdt import Decoder, Doc, write_var_uint
-
-from .utils import get_new_path
+from pycrdt import Doc
 
 
 class YDocNotFound(Exception):
