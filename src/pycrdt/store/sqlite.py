@@ -135,6 +135,9 @@ class SQLiteYStore(BaseYStore):
                 )
                 async with db:
                     cursor = await db.cursor()
+                    # enable full auto-vacuum & rebuild now
+                    await cursor.execute("PRAGMA auto_vacuum = FULL")
+                    await cursor.execute("VACUUM")
                     await cursor.execute(
                         "CREATE TABLE yupdates (path TEXT NOT NULL, yupdate BLOB, "
                         "metadata BLOB, timestamp REAL NOT NULL)"
