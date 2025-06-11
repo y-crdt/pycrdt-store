@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pycrdt-store"
-dynamic = ["version"]
+version = "0.1.0"
 description = "Persistent storage for pycrdt"
 license = { file = "LICENSE" }
 readme = "README.md"
@@ -51,9 +51,6 @@ Homepage = "https://github.com/y-crdt/pycrdt-store"
 Source = "https://github.com/y-crdt/pycrdt-store"
 Issues = "https://github.com/y-crdt/pycrdt-store/issues"
 Pypi = "https://pypi.org/project/pycrdt-store"
-
-[tool.hatch.version]
-path = "src/pycrdt/store/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 ignore-vcs = true

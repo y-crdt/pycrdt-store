@@ -1,5 +1,5 @@
-# Changes in pycrdt-store {#changelog}
+# Version history
 
-<!-- <START NEW CHANGELOG ENTRY> -->
+## 0.1.0
 
-<!-- <END NEW CHANGELOG ENTRY> -->
+- Extract out pycrdt-store from pycrdt-websocket.
