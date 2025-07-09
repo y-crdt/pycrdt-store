@@ -1,5 +1,9 @@
 # Version history
 
+## 0.1.2
+
+- Fix in-memory database connection issue with `SQLiteYStore`.
+
 ## 0.1.1
 
 - Fix SQLite store squashing.
