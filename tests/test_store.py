@@ -231,7 +231,8 @@ async def test_compression_callbacks_zlib(ystore_api):
             assert i == len(data)
 
 
-async def test_in_memory_sqlite_ystore_persistence():
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_in_memory_sqlite_ystore_persistence(ystore_api):
     """
     Test that an in-memory SQLiteYStore properly persists tables and data
     throughout its lifetime.
@@ -241,9 +242,11 @@ async def test_in_memory_sqlite_ystore_persistence():
         db_path = ":memory:"  # Use in-memory database
         document_ttl = None
 
-    async with create_task_group() as _:
-        store_name = "in_memory_test_store"
+    async with create_task_group() as tg:
+        store_name = f"in_memory_test_store_with_api_{ystore_api}"
         ystore = InMemorySQLiteYStore(store_name)
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
 
         async with ystore:
             test_data = [b"data1", b"data2", b"data3"]
