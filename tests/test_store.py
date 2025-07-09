@@ -1,5 +1,6 @@
 import tempfile
 import time
+import zlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -154,3 +155,32 @@ async def test_in_memory_sqlite_ystore_persistence(ystore_api):
 
             # Assert that all data we wrote is present
             assert read_data == test_data
+
+
+async def test_compression_callbacks_zlib():
+    """
+    Verify that registering zlib.compress/decompress as callbacks
+    correctly round-trips data through the SQLiteYStore.
+    """
+    async with create_task_group() as _:
+        store_name = "compress_test"
+        ystore = MySQLiteYStore(store_name, metadata_callback=MetadataCallback(), delete=True)
+        # register zlib compression/decompression
+        ystore.register_compression_callbacks(zlib.compress, zlib.decompress)
+
+        async with ystore:
+            data = [b"alpha", b"beta", b"gamma"]
+            # write compressed
+            for d in data:
+                await ystore.write(d)
+
+            assert Path(MySQLiteYStore.db_path).exists()
+
+            # read back and ensure correct decompression
+            i = 0
+            async for d_read, m, t in ystore.read():
+                assert d_read == data[i]
+                assert m == str(i).encode()
+                i += 1
+
+            assert i == len(data)
