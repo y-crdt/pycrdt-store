@@ -37,6 +37,9 @@ class SQLiteYStore(BaseYStore):
     lock: Lock
     db_initialized: Event | None
     _db: Connection
+    # Optional callbacks for compressing and decompressing data, default: no compression
+    _compress: Callable[[bytes], bytes] | None = None
+    _decompress: Callable[[bytes], bytes] | None = None
 
     def __init__(
         self,
@@ -143,7 +146,7 @@ class SQLiteYStore(BaseYStore):
                         "CREATE INDEX idx_yupdates_path_timestamp ON yupdates (path, timestamp)"
                     )
                     await cursor.execute(f"PRAGMA user_version = {self.version}")
-            self._db = db
+                self._db = db
         else:
             self._db = await connect(
                 self.db_path,
@@ -152,6 +155,14 @@ class SQLiteYStore(BaseYStore):
             )
         assert self.db_initialized is not None
         self.db_initialized.set()
+
+    def register_compression_callbacks(
+        self, compress: Callable[[bytes], bytes], decompress: Callable[[bytes], bytes]
+    ) -> None:
+        if not callable(compress) or not callable(decompress):
+            raise TypeError("Both compress and decompress must be callable.")
+        self._compress = compress
+        self._decompress = decompress
 
     async def read(self) -> AsyncIterator[tuple[bytes, bytes, float]]:
         """Async iterator for reading the store content.
@@ -172,6 +183,11 @@ class SQLiteYStore(BaseYStore):
                         (self.path,),
                     )
                     for update, metadata, timestamp in await cursor.fetchall():
+                        if self._decompress:
+                            try:
+                                update = self._decompress(update)
+                            except Exception:
+                                pass
                         found = True
                         yield update, metadata, timestamp
                 if not found:
@@ -213,15 +229,19 @@ class SQLiteYStore(BaseYStore):
                     await cursor.execute("DELETE FROM yupdates WHERE path = ?", (self.path,))
                     # insert squashed updates
                     squashed_update = ydoc.get_update()
+                    compressed_update = (
+                        self._compress(squashed_update) if self._compress else squashed_update
+                    )
                     metadata = await self.get_metadata()
                     await cursor.execute(
                         "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
-                        (self.path, squashed_update, metadata, time.time()),
+                        (self.path, compressed_update, metadata, time.time()),
                     )
 
                 # finally, write this update to the DB
                 metadata = await self.get_metadata()
+                compressed_data = self._compress(data) if self._compress else data
                 await cursor.execute(
                     "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
-                    (self.path, data, metadata, time.time()),
+                    (self.path, compressed_data, metadata, time.time()),
                 )
