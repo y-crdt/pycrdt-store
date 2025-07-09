@@ -146,12 +146,13 @@ class SQLiteYStore(BaseYStore):
                         "CREATE INDEX idx_yupdates_path_timestamp ON yupdates (path, timestamp)"
                     )
                     await cursor.execute(f"PRAGMA user_version = {self.version}")
-                await db.close()
-        self._db = await connect(
-            self.db_path,
-            exception_handler=exception_logger,
-            log=self.log,
-        )
+                self._db = db
+        else:
+            self._db = await connect(
+                self.db_path,
+                exception_handler=exception_logger,
+                log=self.log,
+            )
         assert self.db_initialized is not None
         self.db_initialized.set()
 
