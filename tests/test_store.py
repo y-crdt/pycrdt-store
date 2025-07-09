@@ -198,6 +198,7 @@ async def test_in_memory_sqlite_ystore_persistence(ystore_api):
             # Assert that all data we wrote is present
             assert read_data == test_data
 
+
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
 async def test_compression_callbacks_zlib(ystore_api):
     """
