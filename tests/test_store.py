@@ -38,6 +38,7 @@ class MyTempFileYStore(TempFileYStore):
 class MySQLiteYStore(SQLiteYStore):
     db_path = MY_SQLITE_YSTORE_DB_PATH
     document_ttl = 1000
+    checkpoint_interval = 50
 
     def __init__(self, *args, delete=False, **kwargs):
         if delete:
@@ -243,7 +244,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
             ystore = StartStopContextManager(ystore, tg)
 
         async with ystore as ystore:
-            for _ in range(165):
+            for _ in range(155):
                 update = ydoc.update()
                 updates.append(update)
                 await ystore.write(update)
