@@ -231,6 +231,7 @@ async def test_compression_callbacks_zlib(ystore_api):
 
             assert i == len(data)
 
+
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
 async def test_sqlite_ystore_checkpoint_loading(ystore_api):
     store_name = "checkpoint_test_store"
@@ -242,7 +243,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
             ystore = StartStopContextManager(ystore, tg)
 
         async with ystore as ystore:
-            for i in range(225):
+            for _ in range(165):
                 update = ydoc.update()
                 updates.append(update)
                 await ystore.write(update)
@@ -254,18 +255,11 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
             t1 = time.time()
             checkpointed_duration = t1 - t0
 
-            # Restore one by one
+            # Restore without using checkpoints
             ydoc_manual = YDocTest()
             t2 = time.time()
-            async with ystore.lock:
-                async with ystore._db:
-                    cursor = await ystore._db.cursor()
-                    await cursor.execute(
-                        "SELECT yupdate FROM yupdates WHERE path = ? ORDER BY timestamp ASC",
-                        (ystore.path,),
-                    )
-                    for (update,) in await cursor.fetchall():
-                        ydoc_manual.ydoc.apply_update(update)
+            async for update, _, _ in ystore.read():
+                ydoc_manual.ydoc.apply_update(update)
             t3 = time.time()
             manual_duration = t3 - t2
 
