@@ -239,13 +239,15 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
     ystore = MySQLiteYStore(store_name, delete=True)
     ydoc = YDocTest()
     updates = []
+    # Generate larger updates by writing bigger data
+    data = b"x" * 1000  # 1KB
     async with create_task_group() as tg:
         if ystore_api == "ystore_start_stop":
             ystore = StartStopContextManager(ystore, tg)
 
         async with ystore as ystore:
             for _ in range(225):
-                update = ydoc.update()
+                update = ydoc.update(data)
                 updates.append(update)
                 await ystore.write(update)
 
