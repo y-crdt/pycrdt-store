@@ -244,7 +244,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
             ystore = StartStopContextManager(ystore, tg)
 
         async with ystore as ystore:
-            for _ in range(155):
+            for _ in range(205):
                 update = ydoc.update()
                 updates.append(update)
                 await ystore.write(update)
