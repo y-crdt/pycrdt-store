@@ -249,17 +249,17 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
 
             # Restore using checkpointed loading
             ydoc_checkpointed = YDocTest()
-            t0 = time.time()
+            t0 = time.perf_counter()
             await ystore.apply_checkpointed_updates(ydoc_checkpointed.ydoc)
-            t1 = time.time()
+            t1 = time.perf_counter()
             checkpointed_duration = t1 - t0
 
             # Restore without using checkpoints
             ydoc_manual = YDocTest()
-            t2 = time.time()
+            t2 = time.perf_counter()
             async for update, _, _ in ystore.read():
                 ydoc_manual.ydoc.apply_update(update)
-            t3 = time.time()
+            t3 = time.perf_counter()
             manual_duration = t3 - t2
 
     assert ydoc_checkpointed.ydoc.get_state() == ydoc_manual.ydoc.get_state()
