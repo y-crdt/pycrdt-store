@@ -1,5 +1,12 @@
-from .store import BaseYStore as BaseYStore
-from .store import SQLiteYStore as SQLiteYStore
-from .store import TempFileYStore as TempFileYStore
+import importlib.metadata
 
-__version__ = "0.1.0"
+from .base import BaseYStore as BaseYStore
+from .base import YDocNotFound as YDocNotFound
+from .file import FileYStore as FileYStore
+from .file import TempFileYStore as TempFileYStore
+from .sqlite import SQLiteYStore as SQLiteYStore
+
+try:
+    __version__ = importlib.metadata.version("pycrdt.store")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "unknown"

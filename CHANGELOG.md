@@ -1,5 +1,16 @@
-# Changes in pycrdt-store {#changelog}
+# Version history
 
-<!-- <START NEW CHANGELOG ENTRY> -->
+## 0.1.2
 
-<!-- <END NEW CHANGELOG ENTRY> -->
+- Fix in-memory database connection issue with `SQLiteYStore`.
+
+## 0.1.1
+
+- Fix SQLite store squashing.
+- Add callbacks to compress/decompress SQLite store updates.
+- Split stores in different files.
+- Mark package as typed.
+
+## 0.1.0
+
+- Extract out pycrdt-store from pycrdt-websocket.

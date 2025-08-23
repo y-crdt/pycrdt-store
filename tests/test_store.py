@@ -1,5 +1,6 @@
 import tempfile
 import time
+import zlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -124,7 +125,7 @@ async def test_document_ttl_reduces_file_size(ystore_api):
         async with ystore as ystore:
             now = time.time()
             db_path = ystore.db_path
-            # 1) tweak page size to 1KB so the file grows in small increments
+            # 1) tweak page size to 512 Bytes so the file grows in small increments
             db = await connect(db_path)
             async with db:
                 cursor = await db.cursor()
@@ -185,7 +186,7 @@ async def test_history_pruning_with_cleanup_interval(ystore_api):
             assert count == 3
 
             # Now advance to t = base + 6
-            # oldest_diff = 6s > history_length + min_cleanup_interval = 4s → triggers prune
+            # oldest_diff = 6s > history_length i.e 3s → triggers prune
             with patch("time.time", return_value=base + 6):
                 await ystore.write(test_ydoc.update())
 
@@ -218,3 +219,66 @@ async def test_version(YStore, ystore_api, caplog):
         YStore.version = prev_version
         async with ystore as ystore:
             await ystore.write(b"bar")
+
+
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_in_memory_sqlite_ystore_persistence(ystore_api):
+    """
+    Test that an in-memory SQLiteYStore properly persists tables and data
+    throughout its lifetime.
+    """
+
+    class InMemorySQLiteYStore(SQLiteYStore):
+        db_path = ":memory:"  # Use in-memory database
+        document_ttl = None
+
+    async with create_task_group() as tg:
+        store_name = f"in_memory_test_store_with_api_{ystore_api}"
+        ystore = InMemorySQLiteYStore(store_name)
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            test_data = [b"data1", b"data2", b"data3"]
+            for data in test_data:
+                await ystore.write(data)
+
+            read_data = []
+            async for update, _, _ in ystore.read():
+                read_data.append(update)
+
+            # Assert that all data we wrote is present
+            assert read_data == test_data
+
+
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_compression_callbacks_zlib(ystore_api):
+    """
+    Verify that registering zlib.compress as a compression callback
+    correctly round-trips data through the SQLiteYStore.
+    """
+    async with create_task_group() as tg:
+        store_name = f"compress_test_with_api_{ystore_api}"
+        ystore = MySQLiteYStore(store_name, metadata_callback=MetadataCallback(), delete=True)
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            # register zlib compression and no-op decompression
+            ystore.register_compression_callbacks(zlib.compress, lambda x: x)
+
+            data = [b"alpha", b"beta", b"gamma"]
+            # write compressed
+            for d in data:
+                await ystore.write(d)
+
+            assert Path(MySQLiteYStore.db_path).exists()
+
+            # read back and ensure correct decompression
+            i = 0
+            async for d_read, m, t in ystore.read():
+                assert zlib.decompress(d_read) == data[i]
+                assert m == str(i).encode()
+                i += 1
+
+            assert i == len(data)
