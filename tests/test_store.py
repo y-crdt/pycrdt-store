@@ -248,7 +248,7 @@ _MUL = 10 if IS_MAC else 1
                 number_of_updates=100 * _MUL,
                 read_speedup=1,
                 write_speedup=1,
-                checkpointing_interval=5,
+                checkpointing_interval=10,
             ),
             id="non-inferiority-for-small-sizes",
         ),
