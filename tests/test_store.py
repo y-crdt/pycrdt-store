@@ -245,7 +245,7 @@ _MUL = 10 if IS_MAC else 1
         # expect it to be no slower than no checkpointing for small number of updates
         pytest.param(
             dict(
-                number_of_updates=64 * _MUL,
+                number_of_updates=75 * _MUL,
                 read_speedup=1,
                 write_speedup=1,
                 checkpointing_interval=5,
@@ -255,7 +255,7 @@ _MUL = 10 if IS_MAC else 1
         # expect it to be at least twice as fast for a moderate number of updates
         pytest.param(
             dict(
-                number_of_updates=521 * _MUL,
+                number_of_updates=750 * _MUL,
                 read_speedup=2,
                 write_speedup=1,
                 checkpointing_interval=50,
@@ -265,7 +265,7 @@ _MUL = 10 if IS_MAC else 1
         # expect it to be at least twice as fast for a larger number of updates
         pytest.param(
             dict(
-                number_of_updates=1024 * _MUL,
+                number_of_updates=1250 * _MUL,
                 read_speedup=3,
                 write_speedup=1,
                 checkpointing_interval=100,
@@ -330,7 +330,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
 
     assert ydoc_checkpointed.array.to_py() == [float(i) for i in range(number_of_updates)]
     assert ydoc_checkpointed.array.to_py() == ydoc_manual.array.to_py()
-    checkpointed_read_faster_times = round(read_time / read_time_checkpointed)
-    checkpointed_write_faster_times = round(write_time / write_time_checkpointed)
-    assert checkpointed_read_faster_times >= test_case["read_speedup"]
-    assert checkpointed_write_faster_times >= test_case["write_speedup"]
+    checkpointed_read_faster_times = read_time / read_time_checkpointed
+    checkpointed_write_faster_times = write_time / write_time_checkpointed
+    assert round(checkpointed_read_faster_times) >= test_case["read_speedup"]
+    assert round(checkpointed_write_faster_times) >= test_case["write_speedup"]
