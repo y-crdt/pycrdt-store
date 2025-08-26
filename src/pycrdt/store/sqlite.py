@@ -90,6 +90,14 @@ class SQLiteYStore(BaseYStore):
                     (self.path,),
                 )
                 row = await cursor.fetchone()
+                print(f"loaded checkpoint for updates {row}")
+                await cursor.execute(
+                    "SELECT checkpoint, timestamp FROM ycheckpoints WHERE path = ?",
+                    (self.path,),
+                )
+                all_matching_checkpoints = await cursor.fetchall()
+                print(f"all_matching_checkpoints: {len(all_matching_checkpoints)}")
+                print(f"all_matching_checkpoints: {all_matching_checkpoints}")
                 if row:
                     ckpt_blob_comp, last_ts = row
                     ckpt_blob = (
@@ -317,6 +325,7 @@ class SQLiteYStore(BaseYStore):
                 # storing checkpoints
                 self._update_counter += 1
                 if self.checkpoint_interval and self._update_counter >= self.checkpoint_interval:
+                    print(f"storing checkpoint {self._update_counter}")
                     # load or init checkpoint
                     await cursor.execute(
                         "SELECT checkpoint, timestamp FROM ycheckpoints WHERE path = ?",
@@ -325,6 +334,7 @@ class SQLiteYStore(BaseYStore):
                     row = await cursor.fetchone()
                     ydoc = Doc()
                     last_ts = 0.0
+                    print(f"loaded previous checkpoint {row}")
                     if row:
                         blob, last_ts = row
                         ydoc.apply_update(self._decompress(blob) if self._decompress else blob)
@@ -335,13 +345,17 @@ class SQLiteYStore(BaseYStore):
                         "WHERE path = ? AND timestamp > ? ORDER BY timestamp ASC",
                         (self.path, last_ts),
                     )
+                    i = 0
                     for (upd,) in await cursor.fetchall():
+                        i += 1
                         ydoc.apply_update(self._decompress(upd) if self._decompress else upd)
+                    print(f"applied {i} updates on top of latest checkpoint")
 
                     # write back the new checkpoint
                     new_ckpt = ydoc.get_update()
                     new_ckpt_compressed = self._compress(new_ckpt) if self._compress else new_ckpt
                     now = time.time()
+                    print(f"inserted a new checkpoint with {now} timestamp")
                     await cursor.execute(
                         "INSERT OR REPLACE INTO ycheckpoints (path, checkpoint, timestamp) "
                         "VALUES (?, ?, ?)",

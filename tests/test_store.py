@@ -328,7 +328,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
             t1 = time.perf_counter()
             read_time = t1 - t0
 
-    assert ydoc_checkpointed.array.to_py() == list(range(number_of_updates))
+    assert ydoc_checkpointed.array.to_py() == [float(i) for i in range(number_of_updates)]
     assert ydoc_checkpointed.array.to_py() == ydoc_manual.array.to_py()
     checkpointed_read_faster_times = round(read_time / read_time_checkpointed)
     checkpointed_write_faster_times = round(write_time / write_time_checkpointed)
