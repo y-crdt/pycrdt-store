@@ -236,7 +236,7 @@ async def test_compression_callbacks_zlib(ystore_api):
 
 
 # Mac runners are so much faster on CI for some reason...
-_MUL = IS_MAC * 10
+_MUL = 10 if IS_MAC else 1
 
 
 @pytest.mark.parametrize(
