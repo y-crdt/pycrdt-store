@@ -342,7 +342,7 @@ class SQLiteYStore(BaseYStore):
                     # apply all updates after last_ts
                     await cursor.execute(
                         "SELECT yupdate FROM yupdates "
-                        "WHERE path = ? AND timestamp > ? ORDER BY timestamp ASC",
+                        "WHERE path = ? AND timestamp >= ? ORDER BY timestamp ASC",
                         (self.path, last_ts),
                     )
                     i = 0
