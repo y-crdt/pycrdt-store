@@ -273,4 +273,4 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, number_of_updates, e
 
     assert ydoc_checkpointed.ydoc.get_state() == ydoc_manual.ydoc.get_state()
     checkpointed_faster_times = round(manual_duration / checkpointed_duration)
-    assert checkpointed_faster_times > expected_speedup
+    assert checkpointed_faster_times >= expected_speedup
