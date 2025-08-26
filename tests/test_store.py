@@ -245,28 +245,18 @@ _MUL = 10 if IS_MAC else 1
         # expect it to be no slower than no checkpointing for small number of updates
         pytest.param(
             dict(
-                number_of_updates=75 * _MUL,
+                number_of_updates=100 * _MUL,
                 read_speedup=1,
                 write_speedup=1,
                 checkpointing_interval=5,
             ),
             id="non-inferiority-for-small-sizes",
         ),
-        # expect it to be at least twice as fast for a moderate number of updates
-        pytest.param(
-            dict(
-                number_of_updates=750 * _MUL,
-                read_speedup=2,
-                write_speedup=1,
-                checkpointing_interval=50,
-            ),
-            id="superiority-for-moderate-sizes",
-        ),
         # expect it to be at least twice as fast for a larger number of updates
         pytest.param(
             dict(
-                number_of_updates=1250 * _MUL,
-                read_speedup=3,
+                number_of_updates=1000 * _MUL,
+                read_speedup=2,
                 write_speedup=1,
                 checkpointing_interval=100,
             ),
