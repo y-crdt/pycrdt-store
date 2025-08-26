@@ -1,3 +1,4 @@
+import platform
 import tempfile
 import time
 import zlib
@@ -13,6 +14,7 @@ from pycrdt.store import SQLiteYStore, TempFileYStore
 
 pytestmark = pytest.mark.anyio
 
+IS_MAC = platform.system() == "Darwin"
 MY_SQLITE_YSTORE_DB_PATH = str(Path(tempfile.mkdtemp(prefix="test_sql_")) / "ystore.db")
 
 
@@ -233,25 +235,40 @@ async def test_compression_callbacks_zlib(ystore_api):
             assert i == len(data)
 
 
+# Mac runners are so much faster on CI for some reason...
+_MUL = IS_MAC * 10
+
+
 @pytest.mark.parametrize(
     "test_case",
     (
         # expect it to be no slower than no checkpointing for small number of updates
         pytest.param(
-            dict(number_of_updates=64, read_speedup=1, write_speedup=1, checkpointing_interval=5),
+            dict(
+                number_of_updates=64 * _MUL,
+                read_speedup=1,
+                write_speedup=1,
+                checkpointing_interval=5,
+            ),
             id="non-inferiority-for-small-sizes",
         ),
         # expect it to be at least twice as fast for a moderate number of updates
         pytest.param(
             dict(
-                number_of_updates=521, read_speedup=2, write_speedup=1, checkpointing_interval=50
+                number_of_updates=521 * _MUL,
+                read_speedup=2,
+                write_speedup=1,
+                checkpointing_interval=50,
             ),
             id="superiority-for-moderate-sizes",
         ),
         # expect it to be at least twice as fast for a larger number of updates
         pytest.param(
             dict(
-                number_of_updates=1024, read_speedup=3, write_speedup=1, checkpointing_interval=100
+                number_of_updates=1024 * _MUL,
+                read_speedup=3,
+                write_speedup=1,
+                checkpointing_interval=100,
             ),
             id="superiority-for-larger-sizes",
         ),
