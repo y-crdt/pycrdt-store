@@ -37,10 +37,10 @@ class MyTempFileYStore(TempFileYStore):
 
 class MySQLiteYStore(SQLiteYStore):
     db_path = MY_SQLITE_YSTORE_DB_PATH
-    document_ttl = 1000
-    checkpoint_interval = 50
 
-    def __init__(self, *args, delete=False, **kwargs):
+    def __init__(self, *args, delete=False, checkpoint_interval=None, document_ttl=1000, **kwargs):
+        self.checkpoint_interval = checkpoint_interval
+        self.document_ttl = document_ttl
         if delete:
             Path(self.db_path).unlink(missing_ok=True)
         super().__init__(*args, **kwargs)
@@ -234,43 +234,86 @@ async def test_compression_callbacks_zlib(ystore_api):
 
 
 @pytest.mark.parametrize(
-    "number_of_updates, expected_speedup",
+    "test_case",
     (
         # expect it to be no slower than no checkpointing for small number of updates
-        [500, 1],
+        pytest.param(
+            dict(number_of_updates=64, read_speedup=1, write_speedup=1, checkpointing_interval=5),
+            id="non-inferiority-for-small-sizes",
+        ),
+        # expect it to be at least twice as fast for a moderate number of updates
+        pytest.param(
+            dict(
+                number_of_updates=521, read_speedup=2, write_speedup=1, checkpointing_interval=50
+            ),
+            id="superiority-for-moderate-sizes",
+        ),
         # expect it to be at least twice as fast for a larger number of updates
-        [5000, 2],
+        pytest.param(
+            dict(
+                number_of_updates=1024, read_speedup=3, write_speedup=1, checkpointing_interval=100
+            ),
+            id="superiority-for-larger-sizes",
+        ),
     ),
 )
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
-async def test_sqlite_ystore_checkpoint_loading(ystore_api, number_of_updates, expected_speedup):
+async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
     store_name = "checkpoint_test_store"
-    ystore = MySQLiteYStore(store_name, delete=True)
+    number_of_updates = test_case["number_of_updates"]
+
+    # measure with checkpointing
+    ystore = MySQLiteYStore(
+        store_name,
+        delete=True,
+        checkpoint_interval=test_case["checkpointing_interval"],
+        document_ttl=None,
+    )
     ydoc = YDocTest()
     async with create_task_group() as tg:
         if ystore_api == "ystore_start_stop":
             ystore = StartStopContextManager(ystore, tg)
 
         async with ystore as ystore:
-            for _ in range(number_of_updates + 2):
+            t0 = time.perf_counter()
+            for _ in range(number_of_updates):
                 update = ydoc.update()
                 await ystore.write(update)
+            t1 = time.perf_counter()
+            write_time_checkpointed = t1 - t0
 
-            # Restore using checkpointed loading
+            # Restore document
             ydoc_checkpointed = YDocTest()
             t0 = time.perf_counter()
-            await ystore.apply_checkpointed_updates(ydoc_checkpointed.ydoc)
+            await ystore.apply_updates(ydoc_checkpointed.ydoc)
             t1 = time.perf_counter()
-            checkpointed_duration = t1 - t0
+            read_time_checkpointed = t1 - t0
 
-            # Restore without using checkpoints
+    # measure without checkpointing
+    ystore = MySQLiteYStore(store_name, delete=True, checkpoint_interval=None, document_ttl=None)
+    ydoc = YDocTest()
+    async with create_task_group() as tg:
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            t0 = time.perf_counter()
+            for _ in range(number_of_updates):
+                update = ydoc.update()
+                await ystore.write(update)
+            t1 = time.perf_counter()
+            write_time = t1 - t0
+
+            # Restore document
             ydoc_manual = YDocTest()
-            t2 = time.perf_counter()
-            async for update, _, _ in ystore.read():
-                ydoc_manual.ydoc.apply_update(update)
-            t3 = time.perf_counter()
-            manual_duration = t3 - t2
+            t0 = time.perf_counter()
+            await ystore.apply_updates(ydoc_manual.ydoc)
+            t1 = time.perf_counter()
+            read_time = t1 - t0
 
-    assert ydoc_checkpointed.ydoc.get_state() == ydoc_manual.ydoc.get_state()
-    checkpointed_faster_times = round(manual_duration / checkpointed_duration)
-    assert checkpointed_faster_times >= expected_speedup
+    assert ydoc_checkpointed.array.to_py() == list(range(number_of_updates))
+    assert ydoc_checkpointed.array.to_py() == ydoc_manual.array.to_py()
+    checkpointed_read_faster_times = round(read_time / read_time_checkpointed)
+    checkpointed_write_faster_times = round(write_time / write_time_checkpointed)
+    assert checkpointed_read_faster_times >= test_case["read_speedup"]
+    assert checkpointed_write_faster_times >= test_case["write_speedup"]

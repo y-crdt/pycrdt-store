@@ -34,7 +34,7 @@ class SQLiteYStore(BaseYStore):
     # Defaults to never purging document history (None).
     document_ttl: int | None = None
     # Interval at which checkpoints are created for efficient document loading
-    checkpoint_interval = 100
+    checkpoint_interval: int | None = 100
     # Counter to keep track of updates since the last checkpoint
     _update_counter = 0
 
@@ -65,7 +65,15 @@ class SQLiteYStore(BaseYStore):
         self.lock = Lock()
         self.db_initialized = None
 
-    async def apply_checkpointed_updates(self, ydoc: Doc) -> None:
+    async def apply_updates(self, ydoc: Doc) -> None:
+        """Apply all stored updates to the YDoc.
+
+        Arguments:
+            ydoc: The YDoc on which to apply the updates.
+        """
+        await self._apply_checkpointed_updates(ydoc)
+
+    async def _apply_checkpointed_updates(self, ydoc: Doc) -> None:
         """Apply the latest checkpoint (if any) and then all subsequent updates to the YDoc."""
         if self.db_initialized is None:
             raise RuntimeError("YStore not started")
@@ -274,40 +282,41 @@ class SQLiteYStore(BaseYStore):
             async with self._db:
                 # first, determine time elapsed since last update
                 cursor = await self._db.cursor()
-                await cursor.execute(
-                    "SELECT timestamp FROM yupdates WHERE path = ? "
-                    "ORDER BY timestamp DESC LIMIT 1",
-                    (self.path,),
-                )
-                row = await cursor.fetchone()
-                diff = (time.time() - row[0]) if row else 0
 
                 ydoc: Doc
-                if self.document_ttl is not None and diff > self.document_ttl:
-                    # squash updates
-                    ydoc = Doc()
+                if self.document_ttl is not None:
                     await cursor.execute(
-                        "SELECT yupdate FROM yupdates WHERE path = ?",
+                        "SELECT timestamp FROM yupdates WHERE path = ? "
+                        "ORDER BY timestamp DESC LIMIT 1",
                         (self.path,),
                     )
-                    for (update,) in await cursor.fetchall():
-                        ydoc.apply_update(update)
-                    # delete history
-                    await cursor.execute("DELETE FROM yupdates WHERE path = ?", (self.path,))
-                    # insert squashed updates
-                    squashed_update = ydoc.get_update()
-                    compressed_update = (
-                        self._compress(squashed_update) if self._compress else squashed_update
-                    )
-                    metadata = await self.get_metadata()
-                    await cursor.execute(
-                        "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
-                        (self.path, compressed_update, metadata, time.time()),
-                    )
+                    row = await cursor.fetchone()
+                    diff = (time.time() - row[0]) if row else 0
+                    if diff > self.document_ttl:
+                        # squash updates
+                        ydoc = Doc()
+                        await cursor.execute(
+                            "SELECT yupdate FROM yupdates WHERE path = ?",
+                            (self.path,),
+                        )
+                        for (update,) in await cursor.fetchall():
+                            ydoc.apply_update(update)
+                        # delete history
+                        await cursor.execute("DELETE FROM yupdates WHERE path = ?", (self.path,))
+                        # insert squashed updates
+                        squashed_update = ydoc.get_update()
+                        compressed_update = (
+                            self._compress(squashed_update) if self._compress else squashed_update
+                        )
+                        metadata = await self.get_metadata()
+                        await cursor.execute(
+                            "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
+                            (self.path, compressed_update, metadata, time.time()),
+                        )
 
                 # storing checkpoints
                 self._update_counter += 1
-                if self._update_counter >= self.checkpoint_interval:
+                if self.checkpoint_interval and self._update_counter >= self.checkpoint_interval:
                     # load or init checkpoint
                     await cursor.execute(
                         "SELECT checkpoint, timestamp FROM ycheckpoints WHERE path = ?",
