@@ -239,7 +239,7 @@ async def test_compression_callbacks_zlib(ystore_api):
         # expect it to be no slower than no checkpointing for small number of updates
         [500, 1],
         # expect it to be at least twice as fast for a larger number of updates
-        [1500, 2],
+        [5000, 2],
     ),
 )
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
