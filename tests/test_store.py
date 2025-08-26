@@ -233,8 +233,17 @@ async def test_compression_callbacks_zlib(ystore_api):
             assert i == len(data)
 
 
+@pytest.mark.parametrize(
+    "number_of_updates, expected_speedup",
+    (
+        # expect it to be no slower than no checkpointing for small number of updates
+        [500, 1],
+        # expect it to be at least twice as fast for a moderate number of updates
+        [1000, 2],
+    ),
+)
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
-async def test_sqlite_ystore_checkpoint_loading(ystore_api):
+async def test_sqlite_ystore_checkpoint_loading(ystore_api, number_of_updates, expected_speedup):
     store_name = "checkpoint_test_store"
     ystore = MySQLiteYStore(store_name, delete=True)
     ydoc = YDocTest()
@@ -243,7 +252,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
             ystore = StartStopContextManager(ystore, tg)
 
         async with ystore as ystore:
-            for _ in range(302):
+            for _ in range(number_of_updates + 2):
                 update = ydoc.update()
                 await ystore.write(update)
 
@@ -263,4 +272,5 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api):
             manual_duration = t3 - t2
 
     assert ydoc_checkpointed.ydoc.get_state() == ydoc_manual.ydoc.get_state()
-    assert checkpointed_duration < manual_duration
+    checkpointed_faster_times = round(manual_duration / checkpointed_duration)
+    assert checkpointed_faster_times > expected_speedup
