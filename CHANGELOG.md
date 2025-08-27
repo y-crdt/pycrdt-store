@@ -1,5 +1,9 @@
 # Version history
 
+## 0.1.3b0
+
+- Improve `SQLiteYStore` performance by storing and applying checkpoints to reduce loading time.
+
 ## 0.1.2
 
 - Fix in-memory database connection issue with `SQLiteYStore`.
