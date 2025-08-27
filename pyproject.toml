@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pycrdt-store"
-version = "0.1.2"
+version = "0.1.3b0"
 description = "Persistent storage for pycrdt"
 license = { file = "LICENSE" }
 readme = "README.md"
