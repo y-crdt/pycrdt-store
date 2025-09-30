@@ -38,6 +38,7 @@ test = [
     "mypy",
     "pre-commit",
     "pytest",
+    "pytest-rerunfailures",
     "trio >=0.25.0",
 ]
 docs = [
