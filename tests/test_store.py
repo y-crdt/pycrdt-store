@@ -331,4 +331,3 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
     print(f"checkpointed_write_faster_times: {checkpointed_write_faster_times}")
     assert round(checkpointed_read_faster_times) >= test_case["read_speedup"]
     assert round(checkpointed_write_faster_times) >= test_case["write_speedup"]
-    assert False
