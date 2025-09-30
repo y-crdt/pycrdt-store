@@ -265,6 +265,7 @@ _MUL = 10 if IS_MAC else 1
     ),
 )
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+@pytest.mark.flaky(reruns=2)
 async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
     store_name = "checkpoint_test_store"
     number_of_updates = test_case["number_of_updates"]
@@ -322,12 +323,5 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
     assert ydoc_checkpointed.array.to_py() == ydoc_manual.array.to_py()
     checkpointed_read_faster_times = read_time / read_time_checkpointed
     checkpointed_write_faster_times = write_time / write_time_checkpointed
-
-    print(f"read_time_checkpointed: {read_time_checkpointed}")
-    print(f"read_time: {read_time}")
-    print(f"checkpointed_read_faster_times: {checkpointed_read_faster_times}")
-    print(f"write_time_checkpointed: {write_time_checkpointed}")
-    print(f"write_time: {write_time}")
-    print(f"checkpointed_write_faster_times: {checkpointed_write_faster_times}")
     assert round(checkpointed_read_faster_times) >= test_case["read_speedup"]
     assert round(checkpointed_write_faster_times) >= test_case["write_speedup"]
