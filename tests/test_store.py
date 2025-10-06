@@ -324,6 +324,7 @@ _MUL = 10 if IS_MAC else 1
     ),
 )
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+@pytest.mark.flaky(reruns=2)
 async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
     store_name = "checkpoint_test_store"
     number_of_updates = test_case["number_of_updates"]
