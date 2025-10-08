@@ -33,11 +33,11 @@ class SQLiteYStore(BaseYStore):
     # Determines the "time to live" for all documents, i.e. how recent the
     # latest update of a document must be before purging document history.
     # Defaults to never purging document history (None).
-    document_squash_after_inactivity_of: int | None = None
+    squash_after_inactivity_of: int | None = None
     # Deprecated: retained for backward compatibility
     document_ttl: int | None = None
     # The maximum length of the history of the documents in seconds that is kept.
-    document_squash_history_older_than: int | None = None
+    squash_history_older_than: int | None = None
     # The minimum interval in seconds between history cleanup operations.
     squash_no_more_often_than: int = 60
     _cleaned_timestamp: float | None = None
@@ -158,13 +158,13 @@ class SQLiteYStore(BaseYStore):
         await super().stop()
 
     async def _init_db(self):
-        if self.document_squash_after_inactivity_of is None and self.document_ttl is not None:
+        if self.squash_after_inactivity_of is None and self.document_ttl is not None:
             warnings.warn(
-                "`document_ttl` is deprecated. Use `document_squash_after_inactivity_of` instead.",
+                "`document_ttl` is deprecated. Use `squash_after_inactivity_of` instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )
-            self.document_squash_after_inactivity_of = self.document_ttl
+            self.squash_after_inactivity_of = self.document_ttl
         create_db = False
         move_db = False
         if not await anyio.Path(self.db_path).exists():
@@ -297,13 +297,10 @@ class SQLiteYStore(BaseYStore):
                 cursor = await self._db.cursor()
 
                 # Determine which time differentials we need to query
-                if (
-                    self.document_squash_after_inactivity_of is None
-                    and self.document_ttl is not None
-                ):
-                    self.document_squash_after_inactivity_of = self.document_ttl
-                need_newest = self.document_squash_after_inactivity_of is not None
-                need_oldest = self.document_squash_history_older_than is not None
+                if self.squash_after_inactivity_of is None and self.document_ttl is not None:
+                    self.squash_after_inactivity_of = self.document_ttl
+                need_newest = self.squash_after_inactivity_of is not None
+                need_oldest = self.squash_history_older_than is not None
 
                 newest_diff = None
                 oldest_diff = None
@@ -335,14 +332,14 @@ class SQLiteYStore(BaseYStore):
                 # If neither is enabled, do nothing (newest_diff and oldest_diff remain None)
 
                 ttl_exceeded = (
-                    self.document_squash_after_inactivity_of is not None
+                    self.squash_after_inactivity_of is not None
                     and newest_diff is not None
-                    and newest_diff > self.document_squash_after_inactivity_of
+                    and newest_diff > self.squash_after_inactivity_of
                 )
                 history_exceeded = (
-                    self.document_squash_history_older_than is not None
+                    self.squash_history_older_than is not None
                     and oldest_diff is not None
-                    and oldest_diff > self.document_squash_history_older_than
+                    and oldest_diff > self.squash_history_older_than
                 )
 
                 now = time.time()
@@ -358,8 +355,8 @@ class SQLiteYStore(BaseYStore):
                     if ttl_exceeded:
                         older_than = now
                     else:  # history_exceeded
-                        assert self.document_squash_history_older_than is not None
-                        older_than = now - self.document_squash_history_older_than
+                        assert self.squash_history_older_than is not None
+                        older_than = now - self.squash_history_older_than
 
                     await cursor.execute(
                         "SELECT yupdate FROM yupdates WHERE path = ? AND timestamp <= ?"

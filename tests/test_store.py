@@ -45,17 +45,17 @@ class MySQLiteYStore(SQLiteYStore):
         *args,
         delete=False,
         checkpoint_interval=None,
-        document_squash_after_inactivity_of=1000,
-        document_squash_history_older_than=None,
+        squash_after_inactivity_of=1000,
+        squash_history_older_than=None,
         squash_no_more_often_than=None,
         **kwargs,
     ):
         self.checkpoint_interval = checkpoint_interval
-        self.document_squash_after_inactivity_of = document_squash_after_inactivity_of
+        self.squash_after_inactivity_of = squash_after_inactivity_of
         if delete:
             Path(self.db_path).unlink(missing_ok=True)
-        if document_squash_history_older_than:
-            self.document_squash_history_older_than = document_squash_history_older_than
+        if squash_history_older_than:
+            self.squash_history_older_than = squash_history_older_than
         if squash_no_more_often_than:
             self.squash_no_more_often_than = squash_no_more_often_than
         super().__init__(*args, **kwargs)
@@ -89,7 +89,7 @@ async def test_ystore(YStore, ystore_api):
 
 
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
-async def test_document_squash_after_inactivity_of_sqlite_ystore(ystore_api):
+async def test_squash_after_inactivity_of_sqlite_ystore(ystore_api):
     async with create_task_group() as tg:
         test_ydoc = YDocTest()
         store_name = f"my_store_with_api_{ystore_api}"
@@ -113,7 +113,7 @@ async def test_document_squash_after_inactivity_of_sqlite_ystore(ystore_api):
 
             # assert that adding a record after document TTL deletes previous document history
             with patch("time.time") as mock_time:
-                mock_time.return_value = now + ystore.document_squash_after_inactivity_of + 1
+                mock_time.return_value = now + ystore.squash_after_inactivity_of + 1
                 await ystore.write(test_ydoc.update())
                 # two updates in DB: one squashed update and the new update
                 assert (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[
@@ -124,7 +124,7 @@ async def test_document_squash_after_inactivity_of_sqlite_ystore(ystore_api):
 
 
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
-async def test_document_squash_after_inactivity_of_reduces_file_size(ystore_api):
+async def test_squash_after_inactivity_of_reduces_file_size(ystore_api):
     async with create_task_group() as tg:
         test_ydoc = YDocTest()
         store_name = f"size_test_store_{ystore_api}"
@@ -150,7 +150,7 @@ async def test_document_squash_after_inactivity_of_reduces_file_size(ystore_api)
             size_before = Path(db_path).stat().st_size
 
             with patch("time.time") as mock_time:
-                mock_time.return_value = now + ystore.document_squash_after_inactivity_of + 1
+                mock_time.return_value = now + ystore.squash_after_inactivity_of + 1
                 await ystore.write(test_ydoc.update())
 
             # Allow some time for vacuum to complete
@@ -170,11 +170,11 @@ async def test_history_pruning_with_cleanup_interval(ystore_api):
     async with create_task_group() as tg:
         test_ydoc = YDocTest()
         store_name = f"store_{ystore_api}_prune_interval"
-        # document_squash_history_older_than = 3s, squash_no_more_often_than = 1s
+        # squash_history_older_than = 3s, squash_no_more_often_than = 1s
         ystore = MySQLiteYStore(
             store_name,
             delete=True,
-            document_squash_history_older_than=3,
+            squash_history_older_than=3,
             squash_no_more_often_than=1,
         )
         if ystore_api == "ystore_start_stop":
@@ -191,16 +191,16 @@ async def test_history_pruning_with_cleanup_interval(ystore_api):
                 with patch("time.time", return_value=base + offset):
                     await ystore.write(test_ydoc.update())
 
-            # All entries are still within document_squash_history_older_than window
+            # All entries are still within squash_history_older_than window
             count = (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[0]
             assert count == 3
 
             # Now advance to t = base + 6
-            # oldest_diff = 6s > document_squash_history_older_than i.e 3s → triggers prune
+            # oldest_diff = 6s > squash_history_older_than i.e 3s → triggers prune
             with patch("time.time", return_value=base + 6):
                 await ystore.write(test_ydoc.update())
 
-            # After pruning, only entries ≥ (current_time − document_squash_history_older_than)
+            # After pruning, only entries ≥ (current_time − squash_history_older_than)
             # i.e., timestamps ≥ (6 − 3) = 3 remain.
             # We had writes at t=0,1,2 (all < 3), t=6 and squashed update survives
             final_count = (
@@ -240,7 +240,7 @@ async def test_in_memory_sqlite_ystore_persistence(ystore_api):
 
     class InMemorySQLiteYStore(SQLiteYStore):
         db_path = ":memory:"  # Use in-memory database
-        document_squash_after_inactivity_of = None
+        squash_after_inactivity_of = None
 
     async with create_task_group() as tg:
         store_name = f"in_memory_test_store_with_api_{ystore_api}"
@@ -334,7 +334,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
         store_name,
         delete=True,
         checkpoint_interval=test_case["checkpointing_interval"],
-        document_squash_after_inactivity_of=None,
+        squash_after_inactivity_of=None,
     )
     ydoc = YDocTest()
     async with create_task_group() as tg:
@@ -358,7 +358,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
 
     # measure without checkpointing
     ystore = MySQLiteYStore(
-        store_name, delete=True, checkpoint_interval=None, document_squash_after_inactivity_of=None
+        store_name, delete=True, checkpoint_interval=None, squash_after_inactivity_of=None
     )
     ydoc = YDocTest()
     async with create_task_group() as tg:
