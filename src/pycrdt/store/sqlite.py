@@ -80,9 +80,11 @@ class SQLiteYStore(BaseYStore):
             # For in-memory databases, query the page count
             cursor = await self._db.cursor()
             await cursor.execute("PRAGMA page_count")
-            page_count = (await cursor.fetchone())[0]
+            row = await cursor.fetchone()
+            page_count = row[0] if row is not None else 0
             await cursor.execute("PRAGMA page_size")
-            page_size = (await cursor.fetchone())[0]
+            row = await cursor.fetchone()
+            page_size = row[0] if row is not None else 0
             return (page_count * page_size) / (1024 * 1024)
         else:
             # For file-based databases, get actual file size
@@ -167,7 +169,7 @@ class SQLiteYStore(BaseYStore):
         if not updates:
             return
 
-        ydoc = Doc()
+        ydoc: Doc = Doc()
         for update, _ in updates:
             if self._decompress:
                 update = self._decompress(update)
