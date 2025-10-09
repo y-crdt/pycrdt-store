@@ -391,7 +391,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
     assert round(checkpointed_write_faster_times) >= test_case["write_speedup"]
 
 
-@pytest.mark.parametrize("ystore_api", ("ystore_start_stop",))
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
 @pytest.mark.parametrize("db_path", (":memory:", "cleanup_test.db"))
 async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
     async with create_task_group() as tg:
