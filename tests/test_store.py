@@ -48,7 +48,7 @@ class MySQLiteYStore(SQLiteYStore):
         squash_after_inactivity_of=1000,
         squash_history_older_than=None,
         squash_no_more_often_than=None,
-        cleanup_when_db_size_above_mb=None,
+        cleanup_when_db_size_above=None,
         **kwargs,
     ):
         self.checkpoint_interval = checkpoint_interval
@@ -59,8 +59,8 @@ class MySQLiteYStore(SQLiteYStore):
             self.squash_history_older_than = squash_history_older_than
         if squash_no_more_often_than:
             self.squash_no_more_often_than = squash_no_more_often_than
-        if cleanup_when_db_size_above_mb:
-            self.cleanup_when_db_size_above_mb = cleanup_when_db_size_above_mb
+        if cleanup_when_db_size_above:
+            self.cleanup_when_db_size_above = cleanup_when_db_size_above
         super().__init__(*args, **kwargs)
 
 
@@ -396,7 +396,7 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
 async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
     async with create_task_group() as tg:
         test_ydoc = YDocTest()
-        store_name = f"cleanup_test_{ystore_api}_{db_path.replace(':', '_').replace('.', '_')}"
+        store_name = "cleanup_test_store"
 
         if db_path == ":memory:":
 
@@ -410,9 +410,8 @@ async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
         DB_SIZE_LIMIT = 0.038
         ystore = ystore_class(
             store_name,
-            delete=True,
             squash_after_inactivity_of=None,
-            cleanup_when_db_size_above_mb=DB_SIZE_LIMIT,
+            cleanup_when_db_size_above=DB_SIZE_LIMIT,
         )
 
         if ystore_api == "ystore_start_stop":

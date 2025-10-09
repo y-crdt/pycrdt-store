@@ -46,7 +46,7 @@ class SQLiteYStore(BaseYStore):
     # Counter to keep track of updates since the last checkpoint
     _update_counter = 0
     # Cleanup when database size exceeds this threshold (in MB)
-    cleanup_when_db_size_above_mb: float | None = None
+    cleanup_when_db_size_above: float | None = None
     path: str
     lock: Lock
     db_initialized: Event | None
@@ -98,11 +98,11 @@ class SQLiteYStore(BaseYStore):
         Returns:
             True if cleanup was performed, False otherwise.
         """
-        if not self.cleanup_when_db_size_above_mb:
+        if not self.cleanup_when_db_size_above:
             return False
 
         db_size = await self._get_database_size_mb()
-        if db_size <= self.cleanup_when_db_size_above_mb:
+        if db_size <= self.cleanup_when_db_size_above:
             return False
 
         # Perform cleanup
@@ -118,7 +118,7 @@ class SQLiteYStore(BaseYStore):
 
         db_size = await self._get_database_size_mb()
         # Add 10% buffer to avoid constant cleanup cycles
-        if db_size <= self.cleanup_when_db_size_above_mb * 0.9:
+        if db_size <= self.cleanup_when_db_size_above * 0.9:
             return True
 
         # Get all documents ordered by oldest activity
@@ -152,7 +152,7 @@ class SQLiteYStore(BaseYStore):
                 continue
 
             db_size = await self._get_database_size_mb()
-            if db_size <= self.cleanup_when_db_size_above_mb * 0.9:
+            if db_size <= self.cleanup_when_db_size_above * 0.9:
                 return True
 
         # Finished cleanup attempts but didn't reduce size enough
