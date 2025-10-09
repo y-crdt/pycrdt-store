@@ -45,6 +45,8 @@ class SQLiteYStore(BaseYStore):
     checkpoint_interval: int | None = 100
     # Counter to keep track of updates since the last checkpoint
     _update_counter = 0
+    # Cleanup when database size exceeds this threshold (in MB)
+    cleanup_when_db_size_above_mb: float | None = None
     path: str
     lock: Lock
     db_initialized: Event | None
@@ -71,6 +73,115 @@ class SQLiteYStore(BaseYStore):
         self.log = log or getLogger(__name__)
         self.lock = Lock()
         self.db_initialized = None
+
+    async def _get_database_size_mb(self) -> float:
+        """Get current database size in MB."""
+        if self.db_path == ":memory:":
+            # For in-memory databases, query the page count
+            cursor = await self._db.cursor()
+            await cursor.execute("PRAGMA page_count")
+            page_count = (await cursor.fetchone())[0]
+            await cursor.execute("PRAGMA page_size")
+            page_size = (await cursor.fetchone())[0]
+            return (page_count * page_size) / (1024 * 1024)
+        else:
+            # For file-based databases, get actual file size
+            if await anyio.Path(self.db_path).exists():
+                return (await anyio.Path(self.db_path).stat()).st_size / (1024 * 1024)
+            return 0.0
+
+    async def _cleanup_if_needed(self) -> bool:
+        """Check if cleanup is needed and perform it if necessary.
+
+        Returns:
+            True if cleanup was performed, False otherwise.
+        """
+        if not self.cleanup_when_db_size_above_mb:
+            return False
+
+        db_size = await self._get_database_size_mb()
+        if db_size <= self.cleanup_when_db_size_above_mb:
+            return False
+
+        # Perform cleanup
+        cursor = await self._db.cursor()
+
+        # Delete all checkpoints
+        try:
+            await cursor.execute("DELETE FROM ycheckpoints")
+            await self._db.commit()
+        except Exception as exc:
+            self.log.exception("Failed to delete checkpoints during cleanup: %s", exc)
+            return False
+
+        db_size = await self._get_database_size_mb()
+        # Add 10% buffer to avoid constant cleanup cycles
+        if db_size <= self.cleanup_when_db_size_above_mb * 0.9:
+            return True
+
+        # Get all documents ordered by oldest activity
+        try:
+            await cursor.execute("""
+                SELECT path, last_activity, update_count FROM (
+                    SELECT path,
+                        MAX(timestamp) AS last_activity,
+                        COUNT(*) AS update_count
+                    FROM yupdates
+                    GROUP BY path
+                )
+                ORDER BY last_activity ASC
+            """)
+            documents = await cursor.fetchall()
+        except Exception as exc:
+            self.log.exception("Unexpected error when querying yupdates for cleanup: %s", exc)
+            return False
+
+        # Squash documents from oldest to newest
+        for path, last_activity, update_count in documents:
+            if update_count <= 1:
+                continue  # Already squashed
+
+            try:
+                await self._squash_document_history(cursor, path)
+                await self._db.commit()
+            except Exception as exc:
+                self.log.exception("Error squashing history for path=%s: %s", path, exc)
+                # Continue to next document
+                continue
+
+            db_size = await self._get_database_size_mb()
+            if db_size <= self.cleanup_when_db_size_above_mb * 0.9:
+                return True
+
+        # Finished cleanup attempts but didn't reduce size enough
+        return False
+
+    async def _squash_document_history(self, cursor, path: str) -> None:
+        """Squash all updates for a given document path into a single update."""
+        # Get all updates for this path
+        await cursor.execute(
+            "SELECT yupdate, timestamp FROM yupdates WHERE path = ? ORDER BY timestamp ASC",
+            (path,),
+        )
+        updates = await cursor.fetchall()
+        if not updates:
+            return
+
+        ydoc = Doc()
+        for update, _ in updates:
+            if self._decompress:
+                update = self._decompress(update)
+            ydoc.apply_update(update)
+
+        squashed_update = ydoc.get_update()
+        compressed_update = self._compress(squashed_update) if self._compress else squashed_update
+        latest_timestamp = updates[-1][1]
+
+        await cursor.execute("DELETE FROM yupdates WHERE path = ?", (path,))
+        await cursor.execute(
+            "INSERT INTO yupdates VALUES (?, ?, ?, ?)",
+            (path, compressed_update, None, latest_timestamp),
+        )
 
     async def apply_updates(self, ydoc: Doc) -> None:
         """Apply all stored updates to the YDoc.
@@ -295,6 +406,7 @@ class SQLiteYStore(BaseYStore):
         async with self.lock:
             async with self._db:
                 cursor = await self._db.cursor()
+                await self._cleanup_if_needed()
 
                 # Determine which time differentials we need to query
                 if self.squash_after_inactivity_of is None and self.document_ttl is not None:
