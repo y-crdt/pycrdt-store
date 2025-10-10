@@ -422,7 +422,11 @@ async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
 
         async with ystore as ystore:
             await ystore._init_db()
-            cursor = await ystore._db.cursor()
+            if db_path == ":memory:":
+                db = ystore._db
+            else:
+                db = await connect(ystore.db_path)
+            cursor = await db.cursor()
 
             # Get initial size
             initial_size = await ystore._get_database_size_mb()
@@ -470,4 +474,4 @@ async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
             count = (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[0]
             assert count < WRITE_COUNT, f"Expected cleanup to squash updates, got {count}"
 
-            await ystore._db.close()
+            await db.close()
