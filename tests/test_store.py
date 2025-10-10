@@ -48,6 +48,7 @@ class MySQLiteYStore(SQLiteYStore):
         squash_after_inactivity_of=1000,
         squash_history_older_than=None,
         squash_no_more_often_than=None,
+        cleanup_when_db_size_above=None,
         **kwargs,
     ):
         self.checkpoint_interval = checkpoint_interval
@@ -58,6 +59,8 @@ class MySQLiteYStore(SQLiteYStore):
             self.squash_history_older_than = squash_history_older_than
         if squash_no_more_often_than:
             self.squash_no_more_often_than = squash_no_more_often_than
+        if cleanup_when_db_size_above:
+            self.cleanup_when_db_size_above = cleanup_when_db_size_above
         super().__init__(*args, **kwargs)
 
 
@@ -386,3 +389,95 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
     checkpointed_write_faster_times = write_time / write_time_checkpointed
     assert round(checkpointed_read_faster_times) >= test_case["read_speedup"]
     assert round(checkpointed_write_faster_times) >= test_case["write_speedup"]
+
+
+@pytest.mark.parametrize("db_path", (":memory:", "cleanup_test.db"))
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
+    async with create_task_group() as tg:
+        test_ydoc = YDocTest()
+        store_name = "cleanup_test_store"
+
+        if db_path == ":memory:":
+
+            class InMemoryYStore(MySQLiteYStore):
+                db_path = ":memory:"
+
+            ystore_class = InMemoryYStore
+        else:
+            if ystore_api == "ystore_start_stop":
+                unique_db_path = MY_SQLITE_YSTORE_DB_PATH.replace("ystore", "unique_ystore")
+
+                class UniqueDBYStore(MySQLiteYStore):
+                    db_path = unique_db_path
+
+                ystore_class = UniqueDBYStore
+            else:
+                ystore_class = MySQLiteYStore
+
+        DB_SIZE_LIMIT = 0.031
+        ystore = ystore_class(
+            store_name,
+            delete=(db_path != ":memory:"),
+            squash_after_inactivity_of=None,
+            cleanup_when_db_size_above=DB_SIZE_LIMIT,
+        )
+
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            await ystore._init_db()
+            if db_path == ":memory:":
+                db = ystore._db
+            else:
+                db = await connect(ystore.db_path)
+            cursor = await db.cursor()
+
+            # Get initial size
+            initial_size = await ystore._get_database_size_mb()
+            assert initial_size < DB_SIZE_LIMIT, (
+                f"Initial size {initial_size}MB should be below limit"
+            )
+
+            # Patch the cleanup method to track calls
+            cleanup_called = {"count": 0, "when_size": []}
+            original_cleanup = ystore._cleanup_if_needed
+
+            async def tracked_cleanup():
+                current_size = await ystore._get_database_size_mb()
+                cleanup_called["when_size"].append(current_size)
+                result = await original_cleanup()
+                if result:
+                    cleanup_called["count"] += 1
+                return result
+
+            ystore._cleanup_if_needed = tracked_cleanup
+
+            # Write updates until we exceed the limit
+            WRITE_COUNT = 80
+            for i in range(WRITE_COUNT):
+                await ystore.write(test_ydoc.update())
+
+            # Verify cleanup was called
+            assert cleanup_called["count"] > 0, "Cleanup should have been triggered"
+
+            # Verify cleanup was called only after exceeding the limit
+            sizes_when_cleanup_triggered = [
+                s for s in cleanup_called["when_size"] if s > DB_SIZE_LIMIT
+            ]
+            assert len(sizes_when_cleanup_triggered) > 0, (
+                "Cleanup should have been triggered when size exceeded limit"
+            )
+
+            # Verify database size was reduced after cleanup
+            final_size = await ystore._get_database_size_mb()
+            assert final_size < DB_SIZE_LIMIT, (
+                f"Final size {final_size}MB should be near limit after cleanup"
+            )
+
+            # Verify updates were squashed
+            count = (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[0]
+            assert count < WRITE_COUNT, f"Expected cleanup to squash updates, got {count}"
+
+            await db.close()
