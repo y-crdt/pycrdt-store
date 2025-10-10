@@ -407,9 +407,10 @@ async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
         else:
             ystore_class = MySQLiteYStore
 
-        DB_SIZE_LIMIT = 0.038
+        DB_SIZE_LIMIT = 0.031
         ystore = ystore_class(
             store_name,
+            delete=True,
             squash_after_inactivity_of=None,
             cleanup_when_db_size_above=DB_SIZE_LIMIT,
         )
