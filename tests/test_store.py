@@ -410,7 +410,7 @@ async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
         DB_SIZE_LIMIT = 0.031
         ystore = ystore_class(
             store_name,
-            delete=True,
+            delete=db_path != ":memory:",
             squash_after_inactivity_of=None,
             cleanup_when_db_size_above=DB_SIZE_LIMIT,
         )
