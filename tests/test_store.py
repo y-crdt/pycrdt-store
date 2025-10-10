@@ -467,5 +467,3 @@ async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
             # Verify updates were squashed
             count = (await (await cursor.execute("SELECT count(*) FROM yupdates")).fetchone())[0]
             assert count < WRITE_COUNT, f"Expected cleanup to squash updates, got {count}"
-
-            await ystore._db.close()
