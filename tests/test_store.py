@@ -396,7 +396,9 @@ async def test_sqlite_ystore_checkpoint_loading(ystore_api, test_case):
 async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
     async with create_task_group() as tg:
         test_ydoc = YDocTest()
-        store_name = "cleanup_test_store"
+        store_name = (
+            f"cleanup_test_store_{ystore_api}_{'memory' if db_path == ':memory:' else 'file'}"
+        )
 
         if db_path == ":memory:":
 
@@ -410,7 +412,7 @@ async def test_cleanup_triggers_when_db_size_exceeds_limit(ystore_api, db_path):
         DB_SIZE_LIMIT = 0.031
         ystore = ystore_class(
             store_name,
-            delete=db_path != ":memory:",
+            delete=(db_path != ":memory:"),
             squash_after_inactivity_of=None,
             cleanup_when_db_size_above=DB_SIZE_LIMIT,
         )
