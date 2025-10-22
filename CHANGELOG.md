@@ -1,5 +1,10 @@
 # Version history
 
+## 0.1.3b1
+
+- Add database size-based cleanup (`cleanup_when_db_size_above` option)
+- Add `squash_history_older_than` and `squash_no_more_often_than` configurables and pruning logic
+
 ## 0.1.3b0
 
 - Improve `SQLiteYStore` performance by storing and applying checkpoints to reduce loading time.
