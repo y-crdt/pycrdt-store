@@ -10,6 +10,7 @@ from anyio import create_task_group, sleep
 from sqlite_anyio import connect
 from utils import StartStopContextManager, YDocTest
 
+from pycrdt import Array, Doc
 from pycrdt.store import SQLiteYStore, TempFileYStore
 
 pytestmark = pytest.mark.anyio
@@ -166,6 +167,45 @@ async def test_squash_after_inactivity_of_reduces_file_size(ystore_api):
             )
 
             await db.close()
+
+
+@pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
+async def test_squash_preserves_data_without_compression(ystore_api):
+    """Regression test: squash must not lose data when compression is disabled.
+
+    Prior to the fix, apply_update was inside `if self._decompress:` in
+    the inline squash path of write(). Without compression (the default),
+    updates were never applied to the squash Doc, producing an empty state
+    that replaced all real data.
+    """
+    async with create_task_group() as tg:
+        test_ydoc = YDocTest()
+        store_name = f"squash_data_loss_{ystore_api}"
+        ystore = MySQLiteYStore(store_name, delete=True)
+        if ystore_api == "ystore_start_stop":
+            ystore = StartStopContextManager(ystore, tg)
+
+        async with ystore as ystore:
+            now = time.time()
+
+            # Write several incremental updates before the squash window
+            for _ in range(5):
+                with patch("time.time") as mock_time:
+                    mock_time.return_value = now
+                    await ystore.write(test_ydoc.update())
+
+            # Trigger squash by writing after the inactivity threshold
+            with patch("time.time") as mock_time:
+                mock_time.return_value = now + ystore.squash_after_inactivity_of + 1
+                await ystore.write(test_ydoc.update())
+
+            # Read back and verify all data survived
+            read_ydoc = Doc()
+            read_ydoc["array"] = read_array = Array()
+            await ystore.apply_updates(read_ydoc)
+            assert list(read_array) == [0, 1, 2, 3, 4, 5], (
+                f"Expected [0..5] after squash, got {list(read_array)}"
+            )
 
 
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
