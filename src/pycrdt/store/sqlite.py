@@ -229,6 +229,8 @@ class SQLiteYStore(BaseYStore):
                     (self.path, last_ts),
                 )
                 for update, metadata, timestamp in await cursor.fetchall():
+                    if self._decompress:
+                        update = self._decompress(update)
                     ydoc.apply_update(update)
                     found_any = True
 
@@ -480,8 +482,7 @@ class SQLiteYStore(BaseYStore):
                     for (update,) in await cursor.fetchall():
                         if self._decompress:
                             update = self._decompress(update)
-                            ydoc.apply_update(update)
-                        # delete history
+                        ydoc.apply_update(update)
                     await cursor.execute(
                         "DELETE FROM yupdates WHERE path = ? AND timestamp <= ?",
                         (self.path, older_than),
