@@ -3,10 +3,9 @@ from __future__ import annotations
 import struct
 import tempfile
 import time
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Callable
 
 import anyio
 from anyio import Lock
