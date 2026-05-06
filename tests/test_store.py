@@ -54,7 +54,8 @@ class MySQLiteYStore(SQLiteYStore):
         self.checkpoint_interval = checkpoint_interval
         self.squash_after_inactivity_of = squash_after_inactivity_of
         if delete:
-            Path(self.db_path).unlink(missing_ok=True)
+            # Generate a unique db_path to avoid Windows file locking issues
+            self.db_path = str(Path(tempfile.mkdtemp(prefix="test_sql_")) / "ystore.db")
         if squash_history_older_than:
             self.squash_history_older_than = squash_history_older_than
         if squash_no_more_often_than:
@@ -79,9 +80,9 @@ async def test_ystore(YStore, ystore_api):
                 await ystore.write(d)
 
             if YStore == MyTempFileYStore:
-                assert (Path(MyTempFileYStore.base_dir) / store_name).exists()
+                assert (Path(ystore.base_dir) / store_name).exists()
             elif YStore == MySQLiteYStore:
-                assert Path(MySQLiteYStore.db_path).exists()
+                assert Path(ystore.db_path).exists()
             i = 0
             async for d, m, t in ystore.read():
                 assert d == data[i]  # data
@@ -219,19 +220,23 @@ async def test_history_pruning_with_cleanup_interval(ystore_api):
 async def test_version(YStore, ystore_api, caplog):
     async with create_task_group() as tg:
         store_name = f"my_store_with_api_{ystore_api}"
-        prev_version = YStore.version
-        YStore.version = -1
         ystore = YStore(store_name)
         if ystore_api == "ystore_start_stop":
             ystore = StartStopContextManager(ystore, tg)
 
         async with ystore as ystore:
             await ystore.write(b"foo")
+
+        prev_version = YStore.version
+        YStore.version = -1
+
+        async with ystore as ystore:
+            await ystore.write(b"bar")
             assert "YStore version mismatch" in caplog.text
 
         YStore.version = prev_version
         async with ystore as ystore:
-            await ystore.write(b"bar")
+            await ystore.write(b"baz")
 
 
 @pytest.mark.parametrize("ystore_api", ("ystore_context_manager", "ystore_start_stop"))
