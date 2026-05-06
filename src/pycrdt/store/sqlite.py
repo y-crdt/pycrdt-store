@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 import warnings
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from logging import Logger, getLogger
-from typing import Callable, Literal
+from typing import Literal
 
 import anyio
 from anyio import TASK_STATUS_IGNORED, Event, Lock, create_task_group
