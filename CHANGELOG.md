@@ -1,5 +1,9 @@
 # Version history
 
+## 0.1.4
+
+- Bump `pycrdt` to `>=0.13.0,<0.14.0`.
+
 ## 0.1.3
 
 - Add database size-based cleanup (`cleanup_when_db_size_above` option)
