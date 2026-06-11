@@ -1,5 +1,9 @@
 # Version history
 
+## 0.1.5
+
+- Bump `pycrdt` to `>=0.14.0,<0.15.0`.
+
 ## 0.1.4
 
 - Bump `pycrdt` to `>=0.13.0,<0.14.0`.
